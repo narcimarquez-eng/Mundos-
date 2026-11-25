@@ -932,6 +932,44 @@
     const lx = dx * Math.cos(r) + dz * Math.sin(r), lz = -dx * Math.sin(r) + dz * Math.cos(r);
     return Math.round((((Math.atan2(lz, lx) * 180 / Math.PI) % 360 + 360) % 360) * 10) / 10;
   }
+  // ¿Está (x, z) dentro del cuadrado de terreno del pueblo (donde mandan sus calles)?
+  function dentroTerrenoPueblo(el, x, z, margen) {
+    const cfg = el.props.cfg; if (!cfg) return false;
+    const r = (cfg.rotation || 0) * Math.PI / 180, dx = x - el.x, dz = z - el.z;
+    const lx = dx * Math.cos(r) + dz * Math.sin(r), lz = -dx * Math.sin(r) + dz * Math.cos(r);
+    const h = mitadTerrenoPueblo(cfg) - (margen || 0);
+    return Math.abs(lx) < h && Math.abs(lz) < h;
+  }
+  // Un camino que pasa por el pueblo: entra por una salida, rodea la plaza y sale por otra. Pone esas dos salidas al
+  // pueblo y cambia los puntos del camino que quedaban dentro por el recorrido por sus calles. Devuelve true si lo hace.
+  function atravesarPueblo(esc, el, c) {
+    const cfg = el.props.cfg; if (!cfg || c.puntos.length < 2) return false;
+    const mu = muestrearCamino(c, 2), n = mu.length;
+    let k0 = 0;
+    mu.forEach((m, k) => { if (Math.hypot(m.x - el.x, m.z - el.z) < Math.hypot(mu[k0].x - el.x, mu[k0].z - el.z)) k0 = k; });
+    if (!dentroTerrenoPueblo(el, mu[k0].x, mu[k0].z)) return false;
+    let a = k0, b = k0;
+    while (a > 0 && dentroTerrenoPueblo(el, mu[a].x, mu[a].z)) a--;
+    while (b < n - 1 && dentroTerrenoPueblo(el, mu[b].x, mu[b].z)) b++;
+    if (dentroTerrenoPueblo(el, mu[a].x, mu[a].z) || dentroTerrenoPueblo(el, mu[b].x, mu[b].z)) return false; // pasa por la salida: no
+    const angA = anguloLocalPueblo(el, mu[a].x, mu[a].z), angB = anguloLocalPueblo(el, mu[b].x, mu[b].z);
+    cfg.exits = [{ angle: angA, gate: null, to: c.nombre, roadId: c.id }, { angle: angB, gate: null, to: c.nombre, roadId: c.id }];
+    // recorrido por dentro: borde → calle de salida → alrededor de la plaza (radio 11 m) → calle de salida → borde
+    const r = (cfg.rotation || 0) * Math.PI / 180;
+    const polar = (angDeg, dist) => { const t = angDeg * Math.PI / 180, lx = Math.cos(t) * dist, lz = Math.sin(t) * dist; return { x: el.x + lx * Math.cos(r) - lz * Math.sin(r), z: el.z + lx * Math.sin(r) + lz * Math.cos(r) }; };
+    let delta = ((angB - angA + 540) % 360) - 180;
+    const dentro = [puntoSalidaPueblo(el, angA), polar(angA, 30), polar(angA, 13)];
+    const pasos = Math.max(2, Math.ceil(Math.abs(delta) / 45));
+    for (let k = 1; k < pasos; k++) dentro.push(polar(angA + delta * k / pasos, 11));
+    dentro.push(polar(angB, 13), polar(angB, 30), puntoSalidaPueblo(el, angB));
+    const dA = mu[a].d, dB = mu[b].d;
+    const dP = c.puntos.map(p => proyectarEnCamino(c, p.x, p.z, mu).d);
+    const antes = c.puntos.filter((p, i) => dP[i] <= dA), despues = c.puntos.filter((p, i) => dP[i] >= dB);
+    const red = p => ({ x: Math.round(p.x * 10) / 10, z: Math.round(p.z * 10) / 10 });
+    c.puntos = antes.concat(dentro.map(red), despues);
+    return true;
+  }
+
   // Une los caminos que llegan al pueblo con sus salidas. desdeSalidas = true: los caminos van a las salidas que ya
   // tiene el pueblo (las elegidas en el Creador de Pueblos); si no, se crean salidas donde llegan los caminos.
   // Devuelve cuántos caminos se han conectado.
@@ -1036,7 +1074,7 @@
       if (pueblos[0]) crearElemento(esc, 'inicio', pueblos[0].x + pueblos[0].props.radio * 0.3, pueblos[0].z);
     } });
 
-  registrarPlantilla({ id: 'rally', nombre: 'Circuito de rally', icono: '🏎', desc: 'Colinas con un circuito de grava y asfalto, barreras, riachuelos con puentes y un vado, lagos, un pueblo y bosques.',
+  registrarPlantilla({ id: 'rally', nombre: 'Circuito de rally', icono: '🏎', desc: 'Colinas con un circuito de grava y asfalto que cruza un pueblo andaluz con su iglesia, barreras, riachuelos con puentes y un vado, lagos y bosques.',
     tam: 1536, bioma: 'templado',
     aplicar(esc, rng) {
       generarTerreno(esc, { tipo: 'colinas', escala: 380, altura: 45, octavas: 5 });
@@ -1049,16 +1087,48 @@
       }
       const c = crearCamino(esc, { tipo: 'grava', ancho: 11, cerrado: true, puntos: pts, nombre: 'Circuito' });
       ajustarTerrenoACamino(esc, c, { margen: 12 });
+      const m = esc.terreno.tam / 2;
+      // Pueblo blanco andaluz EN la pista: el circuito entra por una salida, rodea la plaza y sale por la otra
+      const cfgP = cfgPuebloPorDefecto(rng.int(1, 99999), 3);
+      Object.assign(cfgP, { style: 'andaluz', casas: 'andaluza', trazado: 'adosadas', hasWalls: false, hasRiver: false, hasMagic: false, specialCount: 2, treeDensity: 35, relief: 0, rotation: 0 });
+      const hP = mitadTerrenoPueblo(cfgP);
+      let mu0 = muestrearCamino(c, 2);
+      const total0 = mu0[mu0.length - 1].d;
+      // el tramo más recto entre el 30 % y el 75 % de la vuelta (lejos de la salida)
+      let mejor = null;
+      for (const q of mu0) {
+        if (q.d < total0 * 0.3 || q.d > total0 * 0.75) continue;
+        const k = mu0.indexOf(q), A = mu0[Math.max(0, k - 40)], B = mu0[Math.min(mu0.length - 1, k + 40)];
+        const recta = Math.hypot(B.x - A.x, B.z - A.z) / Math.max(1, B.d - A.d);
+        if (!mejor || recta > mejor.recta) mejor = { q, recta };
+      }
+      const pueblo = crearElemento(esc, 'pueblo', Math.round(mejor.q.x), Math.round(mejor.q.z), { nombre: 'Villarrally', nivel: 1, cfg: cfgP });
+      atravesarPueblo(esc, pueblo, c);
+      prepararPueblo(esc, pueblo);
+      ajustarTerrenoACamino(esc, c, { margen: 12 });
+      prepararPueblo(esc, pueblo);
+      // Iglesia de la Granada (Moguer): torre de 48 m, a la entrada del pueblo, junto a la pista y mirando a ella
+      const cfgPu = pueblo.props.cfg; // el elemento guarda su propia copia
+      const ang = (cfgPu.exits[0].angle + 62) * Math.PI / 180, dIg = radioPueblo(cfgPu.size) + 48;
+      const ig = { x: pueblo.x + Math.cos(ang) * dIg, z: pueblo.z + Math.sin(ang) * dIg };
+      const ejeA = cfgPu.exits[0].angle * Math.PI / 180, ux = Math.cos(ejeA), uz = Math.sin(ejeA);
+      const proy = (ig.x - pueblo.x) * ux + (ig.z - pueblo.z) * uz, qx = pueblo.x + ux * proy, qz = pueblo.z + uz * proy;
+      allanarArea(esc, ig.x, ig.z, 44, alturaEn(esc, pueblo.x, pueblo.z), 18);
+      const iglesia = crearElemento(esc, 'glb', Math.round(ig.x), Math.round(ig.z), { nombre: 'Iglesia de Ntra. Sra. de la Granada (Moguer)', modelo: 'glb/edificios/iglesia_granada_moguer.glb', alturaObjetivo: 48 });
+      iglesia.rotY = Math.round(Math.atan2(qx - ig.x, qz - ig.z) * 180 / Math.PI); // la fachada (+z) mira a la calle de entrada
+      // Lo que va a lo largo de la vuelta, con la pista ya pasando por el pueblo
       const mu = muestrearCamino(c, 2), total = mu[mu.length - 1].d;
       const enD = d => { let k = 0; while (k < mu.length - 1 && mu[k].d < d) k++; const a = mu[Math.max(0, k - 1)], b = mu[Math.min(mu.length - 1, k + 1)]; return { x: mu[k].x, z: mu[k].z, rot: Math.atan2(b.x - a.x, b.z - a.z) * 180 / Math.PI }; };
       const s0 = enD(4);
       const meta = crearElemento(esc, 'meta', s0.x, s0.z, { ancho: 16 }); meta.rotY = s0.rot;
       const ini = crearElemento(esc, 'inicio', enD(total - 14).x, enD(total - 14).z); ini.rotY = s0.rot;
-      for (let k = 1; k <= 5; k++) { const p = enD(total * k / 6); const cp = crearElemento(esc, 'checkpoint', p.x, p.z, { orden: k, ancho: 15, nombre: 'Control ' + k }); cp.rotY = p.rot; }
-      // Superficie mixta: un tramo de asfalto y un charco de barro
-      const r1 = Math.round(total * 0.35), r2 = Math.round(total * 0.55);
-      c.tramos.push({ desde: r1, hasta: r2, tipo: 'asfalto' }, { desde: Math.round(total * 0.76), hasta: Math.round(total * 0.8), tipo: 'barro' });
+      const enPueblo = d => { const p = enD(d); return dentroTerrenoPueblo(pueblo, p.x, p.z, -20); };
+      for (let k = 1; k <= 5; k++) { let d = total * k / 6; while (enPueblo(d) && d < total - 30) d += 20; const p = enD(d); const cp = crearElemento(esc, 'checkpoint', p.x, p.z, { orden: k, ancho: 15, nombre: 'Control ' + k }); cp.rotY = p.rot; }
+      // Superficie mixta: un tramo de asfalto y un charco de barro (fuera del pueblo)
+      let r1 = Math.round(total * 0.12), r2 = Math.round(total * 0.27);
+      c.tramos.push({ desde: r1, hasta: r2, tipo: 'asfalto' }, { desde: Math.round(total * 0.86), hasta: Math.round(total * 0.89), tipo: 'barro' });
       // Barreras: neumáticos en la salida, guardarraíl en el asfalto, cinta para el público y paja en dos controles
+      // (dentro del pueblo no se ponen: allí mandan sus calles)
       const red = v => Math.round(v);
       c.barreras.push(
         { tipo: 'neumaticos', lado: 'ambos', desde: red(total - 40), hasta: 40, separacion: 1.2 },
@@ -1066,24 +1136,9 @@
         { tipo: 'cinta', lado: 'ambos', desde: 45, hasta: r1 - 5, separacion: 5 },
         { tipo: 'cinta', lado: 'ambos', desde: r2 + 5, hasta: red(total - 45), separacion: 5 },
         { tipo: 'balas_paja', lado: 'ambos', desde: red(total * 2 / 6 - 18), hasta: red(total * 2 / 6 + 18), separacion: 1.5 },
-        { tipo: 'balas_paja', lado: 'ambos', desde: red(total * 4 / 6 - 18), hasta: red(total * 4 / 6 + 18), separacion: 1.5 },
+        { tipo: 'balas_paja', lado: 'ambos', desde: red(total * 5 / 6 - 18), hasta: red(total * 5 / 6 + 18), separacion: 1.5 },
         { tipo: 'valla_publi', lado: 'izq', desde: 12, hasta: 36, separacion: 3 });
-      // Pueblo de prueba dentro del circuito, con un camino de tierra hasta la pista que entra por su salida
-      const m = esc.terreno.tam / 2;
-      const cfgP = cfgPuebloPorDefecto(rng.int(1, 99999), 2);
-      Object.assign(cfgP, { style: 'andaluz', casas: 'andaluza', trazado: 'adosadas', hasWalls: false, hasRiver: false, hasMagic: false, specialCount: 2, relief: 0 }); // pueblo blanco andaluz
-      const hP = mitadTerrenoPueblo(cfgP);
-      const sitioP = buscarSitio(esc, rng, (x, z) => Math.hypot(x, z) < m * 0.35 && distanciaACamino(c, x, z, mu) > hP + 40, 800) || { x: 0, z: 0 };
-      const pueblo = crearElemento(esc, 'pueblo', sitioP.x, sitioP.z, { nombre: 'Villarrally', nivel: 1, cfg: cfgP });
-      prepararPueblo(esc, pueblo);
-      let cerca = null;
-      for (const q of mu) { const d = Math.hypot(q.x - pueblo.x, q.z - pueblo.z); if (!cerca || d < cerca.d) cerca = { d, q }; }
-      const acceso = crearCamino(esc, { tipo: 'tierra', ancho: 6, nombre: 'Acceso a Villarrally', puntos: [
-        { x: pueblo.x, z: pueblo.z },
-        { x: (pueblo.x * 0.45 + cerca.q.x * 0.55) + rng.range(-25, 25), z: (pueblo.z * 0.45 + cerca.q.z * 0.55) + rng.range(-25, 25) },
-        { x: cerca.q.x, z: cerca.q.z }] });
-      conectarCaminosPueblo(esc, pueblo);
-      ajustarTerrenoACamino(esc, acceso);
+      const cercaIglesia = (x, z) => Math.hypot(x - ig.x, z - ig.z) < 70;
       // Riachuelo de un lado a otro del mapa, lejos del pueblo: cruza la pista por dos vados
       const N2 = crearRuido(rng.int(1, 1e6));
       const zR = pueblo.z > 0 ? -m * 0.5 : m * 0.5, rpts = [];
@@ -1098,7 +1153,7 @@
       const lagos = [];
       for (const R of [70, 40, 22]) {
         const s2 = buscarSitio(esc, rng, (x, z) => Math.abs(x) < m - R * 1.6 && Math.abs(z) < m - R * 1.6 && distanciaACamino(c, x, z, mu) > R * 1.5 + 20 &&
-          Math.hypot(x - pueblo.x, z - pueblo.z) > hP + R * 1.5 && distanciaACamino(rio, x, z) > R * 1.5 + 10 && lagos.every(l => Math.hypot(l.x - x, l.z - z) > (l.props.radio + R) * 1.8), 1500);
+          Math.hypot(x - pueblo.x, z - pueblo.z) > hP + R * 1.5 && !cercaIglesia(x, z) && distanciaACamino(rio, x, z) > R * 1.5 + 10 && lagos.every(l => Math.hypot(l.x - x, l.z - z) > (l.props.radio + R) * 1.8), 1500);
         if (!s2) continue;
         const lago = crearElemento(esc, 'lago', s2.x, s2.z, { radio: R, nombre: R > 50 ? 'Lago grande' : R > 30 ? 'Lago' : 'Charca', forma: rng.int(1, 99999) });
         excavarLago(esc, lago);
@@ -1130,14 +1185,14 @@
       const puentes = ponerPuentes(esc, { modelos: ['riotinto', 'romano', 'madera', 'torreon', 'muelle'] });
       const dePista = puentes.filter(pu => pu.props.camino === c.id);
       if (dePista.length > 1) quitar(esc, dePista[dePista.length - 1].id);
-      const libre = (x, z) => distanciaACamino(c, x, z, mu) > 45 && Math.hypot(x - pueblo.x, z - pueblo.z) > hP + 25 && distanciaACamino(rio, x, z) > 15 &&
+      const libre = (x, z) => distanciaACamino(c, x, z, mu) > 45 && Math.hypot(x - pueblo.x, z - pueblo.z) > hP + 25 && !cercaIglesia(x, z) && distanciaACamino(rio, x, z) > 15 &&
         (!rio2 || distanciaACamino(rio2, x, z) > 12) && lagos.every(l => Math.hypot(l.x - x, l.z - z) > l.props.radio * 1.4 + 10);
       for (let k = 0; k < 14; k++) {
         const s = buscarSitio(esc, rng, libre);
         if (s) crearElemento(esc, 'bosque', s.x, s.z, { radio: rng.int(30, 80), densidad: rng.range(4, 10), especie: rng.pick(['pinsapo', 'pino_pinonero', 'mixto']) });
       }
       for (let k = 0; k < 8; k++) {
-        const s = buscarSitio(esc, rng, (x, z) => { const d = distanciaACamino(c, x, z, mu); return d > 12 && d < 30 && Math.hypot(x - pueblo.x, z - pueblo.z) > hP; });
+        const s = buscarSitio(esc, rng, (x, z) => { const d = distanciaACamino(c, x, z, mu); return d > 12 && d < 30 && Math.hypot(x - pueblo.x, z - pueblo.z) > hP && !cercaIglesia(x, z); });
         if (s) crearElemento(esc, 'rocas', s.x, s.z, { radio: 10, cantidad: 8, tamMax: 2.5 });
       }
     } });
@@ -1282,6 +1337,7 @@
     PRADERA, VEG_NADA, codVegetacion, decodVegetacion, vegetacionEn, pintarVegetacion,
     TIPOS_BARRERA, LADOS, largoCamino, enTramo, superficieEn, proyectarEnCamino, caminoEn,
     crearCamino, muestrearCamino, rasante, ajustarTerrenoACamino, materialCamino, distanciaACamino,
+    dentroTerrenoPueblo, atravesarPueblo,
     PUENTES, excavarLago, crucesCaminoRio, ajustarPuenteACamino, ponerPuentes, puentesDeCamino,
     esRio, profundidadRio, nivelesRio, mitadTerrenoPueblo, puntoSalidaPueblo, anguloLocalPueblo, conectarCaminosPueblo,
     crearElemento, buscarElemento, buscarCamino, quitar, duplicarElemento, radioElemento, prepararPueblo, copiaProfunda,

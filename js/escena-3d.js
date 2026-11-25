@@ -435,7 +435,11 @@ registrarDibujo('puente', (el, ctx) => {
   });
   return g;
 });
-registrarDibujo('glb', (el, ctx) => dibujarModelo(el, ctx, el.props.modelo, el.props.alturaObjetivo));
+// Edificios de esta app (glb/edificios/) con su altura real: se usa si el elemento no pide otra
+export const EDIFICIOS = [
+  { ruta: 'glb/edificios/iglesia_granada_moguer.glb', nombre: 'Iglesia de la Granada (Moguer) · torre de 48 m', alto: 48 }
+];
+registrarDibujo('glb', (el, ctx) => dibujarModelo(el, ctx, el.props.modelo, el.props.alturaObjetivo || (EDIFICIOS.find(e => e.ruta === el.props.modelo) || {}).alto || 0));
 registrarDibujo('enemigo', (el, ctx) => {
   const g = dibujarModelo(el, ctx, el.props.modelo, el.props.alturaObjetivo || 2.4);
   if (ctx.editor || ctx.etiquetas) { const et = crearEtiqueta((el.nombre || 'Enemigo') + ' · Nv ' + el.props.nivel, { alto: 0.9 }); et.position.y = (el.props.alturaObjetivo || 2.4) + 1; g.add(et); }
@@ -460,14 +464,17 @@ registrarDibujo('pueblo', (el, ctx) => {
   const mSuelo = malla(pintarGeo(suelo, '#b3a48e', 0.05), MAT_VC_SUAVE, false); mSuelo.userData.maqueta = true; g.add(mSuelo);
   const geos = [];
   const rot = (cfg.rotation || 0) * DEG;
-  for (let s = 0; s < 4; s++) {
-    const a = rot + s * Math.PI / 2, ancho = cfg.roadWidth || 7, n = 24;
-    const calle = new THREE.PlaneGeometry(ancho, R * 0.95, 1, n).rotateX(-Math.PI / 2);
-    calle.translate(0, 0, R * 0.95 / 2); calle.rotateY(-a + Math.PI / 2);
+  // calles: las 4 principales y, hasta el borde del terreno del pueblo, las de salida hacia los caminos
+  const calles = [0, 1, 2, 3].map(s => ({ a: rot + s * Math.PI / 2, largo: R * 0.95 }));
+  for (const ex of (cfg.exits || [])) calles.push({ a: rot + ex.angle * DEG, largo: E.mitadTerrenoPueblo(cfg) / Math.max(Math.abs(Math.cos(ex.angle * DEG)), Math.abs(Math.sin(ex.angle * DEG))) });
+  calles.forEach((cl, s) => {
+    const a = cl.a, ancho = cfg.roadWidth || 7, n = Math.ceil(cl.largo / 4);
+    const calle = new THREE.PlaneGeometry(ancho, cl.largo, 1, n).rotateX(-Math.PI / 2);
+    calle.translate(0, 0, cl.largo / 2); calle.rotateY(-a + Math.PI / 2);
     const pc = calle.attributes.position;
     for (let k = 0; k < pc.count; k++) pc.setY(k, yLocal(pc.getX(k), pc.getZ(k)) + 0.07);
     geos.push(pintarGeo(calle, '#9c8f7c', 0.05, s));
-  }
+  });
   // Casas en anillos, sin pisar las calles
   const nCasas = Math.round((cfg.size || 3) * 9 * (cfg.houseDensity || 80) / 80);
   const casas = [];
@@ -626,8 +633,12 @@ function colocarBarreras(esc, c, piezas) {
         pts.push({ x, z, y: E.alturaEn(esc, x, z), giro: Math.atan2(p.dx, p.dz) });
       }
       const rnd = E.mulberry32(E.hashTexto(c.id + b.tipo + lado + d0));
+      const pueblos = esc.elementos.filter(e => e.tipo === 'pueblo' && e.props.cfg);
+      const enPueblo = p => pueblos.some(pu => E.dentroTerrenoPueblo(pu, p.x, p.z, -2));
       pts.forEach((p, k) => {
-        const sig = pts[k + 1];
+        if (enPueblo(p)) return; // dentro del pueblo mandan sus calles
+        let sig = pts[k + 1];
+        if (sig && enPueblo(sig)) sig = null;
         switch (b.tipo) {
           case 'valla_madera': poner('poste_madera', p, p.giro); if (sig) { tramo('riel_madera', p, sig, 0.45); tramo('riel_madera', p, sig, 0.9); } break;
           case 'guardarrail': poner('poste_metal', p, p.giro); if (sig) tramo('bionda', p, sig, 0.55); break;
@@ -984,6 +995,7 @@ export class Escena3D {
       return r;
     };
     const hueco = new Uint8Array(mu.length);
+    const pueblos = esc.elementos.filter(e => e.tipo === 'pueblo' && e.props.cfg);
     let pesos = null;
     const pesosEn = d => { const p = new Array(8).fill(0); for (const dd of [d - 1.5, d, d, d + 1.5]) p[Math.max(0, tipos.indexOf(E.superficieEn(c, dd)))] += 0.25; return p; };
     const escTex = escalaCamino(c.tipo);
@@ -1004,7 +1016,8 @@ export class Escena3D {
       const nx = -dz, nz = dx;
       muestraSup(mu[k].d);
       if (tex) pesos = pesosEn(mu[k].d);
-      hueco[k] = puentes.length && enPuente(mu[k].d) ? 1 : 0;
+      // bajo un puente o dentro de un pueblo (allí la calzada son las calles del pueblo) no se dibuja
+      hueco[k] = (puentes.length && enPuente(mu[k].d)) || pueblos.some(pu => E.dentroTerrenoPueblo(pu, mu[k].x, mu[k].z, 1)) ? 1 : 0;
       const rampa = puentes.length ? rampaEn(mu[k].d) : null;
       for (let q = 0; q < W; q++) {
         const u = cruz[q], x = mu[k].x + nx * u * c.ancho, z = mu[k].z + nz * u * c.ancho;

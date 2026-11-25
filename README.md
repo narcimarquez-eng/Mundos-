@@ -12,6 +12,7 @@ Viene de la parte de edición del [Creador de Mundos RPG](https://github.com/nar
 | `js/escena-3d.js` | Dibujo 3D con three.js, compartido por editor y visor. Un dibujo por tipo de elemento (`registrarDibujo`). |
 | `js/vegetacion.js` | Árboles con modelo `.glb`: instancias, niveles de detalle, impostores y viento. |
 | `js/pradera.js`, `js/pradera-atlas.js` | Hierba, trigo, flores, hierba alta y bambú alrededor de la cámara (el atlas viene del Creador RPG). |
+| `glb/edificios/`, `modelos-fuente/edificios/`, `tools/preparar-edificios.mjs` | Edificios propios (la iglesia de Moguer): el original y la versión ligera (mallas unidas por material, texturas WebP). Salen los primeros en «Modelo .glb» del editor, ya con su altura real. |
 | `glb/arboles/`, `modelos-fuente/arboles/`, `tools/preparar-arboles.mjs` | Árboles preparados para el visor, sus originales y la herramienta que los prepara. |
 | `js/almacen.js` | Guardado en el navegador (IndexedDB): escenarios y modelos importados. |
 | `js/catalogo-rpg.js` | Lista de los 342 modelos `.glb` del Creador RPG (enemigos, cabañas, piezas, muelles, puentes, mazmorras). Se regenera con `npm run catalogo` (necesita el otro repositorio al lado). |
@@ -22,7 +23,7 @@ Viene de la parte de edición del [Creador de Mundos RPG](https://github.com/nar
 
 Abre `index.html` servido por web (GitHub Pages o `npx serve .`); usa módulos y three.js desde jsDelivr, así que no basta con abrirlo como archivo.
 
-El escenario de ejemplo (el circuito de rally) trae un **pueblo de prueba** con su camino de acceso, **dos riachuelos** (uno desemboca en el lago grande), **tres lagos** de distinto tamaño, **puentes** sobre la pista (el muelle de Riotinto y el romano) y un vado, hierba, bosques y barreras.
+El escenario de ejemplo (el circuito de rally) **atraviesa un pueblo andaluz**: la pista entra por una salida, rodea la fuente de la plaza y sale por la opuesta (dentro del pueblo se corre sobre sus calles empedradas y no hay barreras). A la entrada está la **Iglesia de Nuestra Señora de la Granada de Moguer** a escala real (torre de 48 m), para mirar el pueblo con perspectiva. Además trae **dos riachuelos** (uno desemboca en el lago grande), **tres lagos** de distinto tamaño, **puentes** sobre la pista (el muelle de Riotinto y el romano) y un vado, hierba, bosques y barreras.
 
 1. **✨ Nuevo** → elige una plantilla: Lienzo vacío, Mundo RPG, Circuito de rally, Plataformas, Archipiélago, Cordillera, Desierto o Volcán. Tamaño de 256 m a 8 km y tres niveles de detalle del terreno.
 2. **Herramientas** (barra izquierda, teclas `1`–`6`):
@@ -81,6 +82,8 @@ El Creador de Pueblos tiene el estilo **Pueblo Andaluz** y el tipo de casas **«
 - la **fachada en espejo** (la puerta y las ventanas al otro lado), además del tamaño y el giro de siempre.
 
 Con el trazado **«casas adosadas»** salen calles de casas en hilera. El pueblo del escenario de ejemplo es andaluz.
+
+`Escenario.atravesarPueblo(esc, pueblo, camino)` hace que un camino cruce un pueblo: le pone dos salidas (`cfg.exits`) donde el camino entra y sale de su terreno y desvía el trazado por la plaza. Dentro del terreno del pueblo la cinta del camino no se dibuja (se usan las calles del pueblo).
 
 ### Creador de Pueblos incluido
 `creador-de-pueblos.html` y lo que necesita (`js/village-core.js`, `casas-glb.js`, `casa-madera.js`, `arboles.js`, `pueblo-edits.js`, `character.js`, `three-puente.js`, `puestos-datos.js`, `texturas-lib.js`, `glb/pueblo/`, los puentes de `glb/`, `assets/` y `enemigos-editor/`) son una copia de [Creador-de-mundos-Rpg](https://github.com/narcimarquez-eng/Creador-de-mundos-Rpg). «🏗 Abrir en el Creador de Pueblos» abre esta copia, así que la vuelta con el diseño funciona siempre, publiques donde publiques. Si cambia allí, hay que volver a copiar esos archivos.

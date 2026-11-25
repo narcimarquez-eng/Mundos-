@@ -283,3 +283,20 @@ test('lagos y puentes: vaso con agua contenida, cruces y puentes alineados con e
   assert.strictEqual(tramos.length, 1);
   assert.ok(tramos[0].d0 < 200 && tramos[0].d1 > 200, 'el puente cubre el cruce');
 });
+
+test('atravesarPueblo: la pista entra por una salida, rodea la plaza y sale por otra', () => {
+  const e = E.crearVacio({ tam: 1600, res: 129 });
+  const c = E.crearCamino(e, { tipo: 'grava', ancho: 11, puntos: [{ x: -700, z: 20 }, { x: -250, z: 10 }, { x: 0, z: 0 }, { x: 250, z: -10 }, { x: 700, z: -20 }] });
+  const cfg = E.cfgPuebloPorDefecto(5, 3); cfg.rotation = 0;
+  const pu = E.crearElemento(e, 'pueblo', 0, 0, { cfg });
+  assert.ok(E.atravesarPueblo(e, pu, c));
+  const ex = pu.props.cfg.exits;
+  assert.strictEqual(ex.length, 2);
+  assert.ok(ex.every(s => s.roadId === c.id));
+  const dif = Math.abs(((ex[0].angle - ex[1].angle) % 360 + 360) % 360 - 180);
+  assert.ok(dif < 40, 'salidas casi opuestas');
+  // el trazado pasa cerca de la plaza pero no por la fuente
+  const mu = E.muestrearCamino(c, 1);
+  const dmin = Math.min(...mu.map(m => Math.hypot(m.x, m.z)));
+  assert.ok(dmin > 8 && dmin < 16, 'rodea la plaza: ' + dmin);
+});

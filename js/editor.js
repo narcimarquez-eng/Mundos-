@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
-import { Escena3D } from './escena-3d.js';
+import { Escena3D, EDIFICIOS } from './escena-3d.js';
 
 const E = window.Escenario, A = window.Almacen, CAT = window.CatalogoRPG || [];
 const $ = id => document.getElementById(id);
@@ -975,6 +975,7 @@ function nombreModelo(ruta) {
   if (!ruta) return '—';
   if (ruta.startsWith('local:')) return (esc.glbs[ruta.slice(6)] || {}).nombre || 'Modelo importado';
   if (ruta.startsWith('rpg:')) { const m = CAT.find(c => c.ruta === ruta.slice(4)); return m ? m.nombre : ruta.slice(4).split('/').pop(); }
+  const ed = EDIFICIOS.find(e => e.ruta === ruta); if (ed) return ed.nombre;
   return ruta.split('/').pop();
 }
 let resolverModelo = null;
@@ -998,9 +999,11 @@ document.querySelectorAll('#mod-tabs button').forEach(b => b.addEventListener('c
 function pintarListaRpg() {
   const q = $('mod-buscar').value.trim().toLowerCase(), g = $('mod-grupo').value;
   const l = $('mod-lista-rpg'); l.innerHTML = '';
-  const res = CAT.filter(c => (!g || c.grupo === g) && (!q || (c.nombre + ' ' + c.ruta).toLowerCase().includes(q))).slice(0, 200);
+  // primero los edificios de esta app (iglesia…), luego la biblioteca del Creador RPG
+  const propios = EDIFICIOS.map(e => ({ ruta: e.ruta, nombre: e.nombre, grupo: 'edificios', sub: 'esta app', propio: true }));
+  const res = propios.concat(CAT).filter(c => (!g || c.grupo === g) && (!q || (c.nombre + ' ' + c.ruta).toLowerCase().includes(q))).slice(0, 200);
   if (!res.length) l.append(h('div', { class: 'vacio' }, 'Sin resultados'));
-  for (const c of res) l.append(h('div', { class: 'item' }, h('span', { class: 't' }, c.nombre, h('small', null, (c.sub ? c.sub + ' · ' : '') + c.grupo)), boton('Usar', () => terminarModelo('rpg:' + c.ruta), 'primario')));
+  for (const c of res) l.append(h('div', { class: 'item' }, h('span', { class: 't' }, c.nombre, h('small', null, (c.sub ? c.sub + ' · ' : '') + c.grupo)), boton('Usar', () => terminarModelo(c.propio ? c.ruta : 'rpg:' + c.ruta), 'primario')));
 }
 $('mod-buscar').addEventListener('input', pintarListaRpg);
 $('mod-grupo').addEventListener('change', pintarListaRpg);
