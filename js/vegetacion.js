@@ -281,7 +281,7 @@ export class Vegetacion {
         else if (d < d2) { for (let k = 0; k < mm.length; k++) { mm[k].set(m, nm * 16); cm[k].set(c, nm * 3); } nm++; }
         else if (d < d3) { ml.set(m, nl * 16); cl.set(c, nl * 3); nl++; }
       }
-      const fijar = (lista, n) => { for (const im of lista) { im.count = n; im.instanceMatrix.needsUpdate = true; im.instanceColor.needsUpdate = true; } };
+      const fijar = (lista, n) => { for (const im of lista) { im.count = n; for (const [a, w] of [[im.instanceMatrix, 16], [im.instanceColor, 3]]) { a.clearUpdateRanges(); if (n) a.addUpdateRange(0, n * w); a.needsUpdate = n > 0; } } };
       fijar(est.cerca, nc); fijar(est.medio, nm); fijar(est.lejos, nl);
     }
   }

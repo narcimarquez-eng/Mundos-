@@ -10,6 +10,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
 import { Vegetacion } from './vegetacion.js';
 import { Pradera } from './pradera.js';
+import { cargarSuelos, crearMezcla, actualizarMezcla, materialTerreno, materialCamino, escalaCamino, uvEnMetros } from './suelos.js';
 
 const E = window.Escenario;
 const DEG = Math.PI / 180;
@@ -182,6 +183,7 @@ function texturaTexto(texto, fondo, color) {
   return t;
 }
 
+const BLANCO_SUELO = new THREE.Color(1.02, 1.02, 1.0);
 const COLOR_VEG = { hierba: new THREE.Color('#8fe04a'), trigo: new THREE.Color('#f0c43a'), flores: new THREE.Color('#ef5fae'), hierbaAlta: new THREE.Color('#2f8f3a'), bambu: new THREE.Color('#b6ef6a') };
 const COLOR_AREA = { pueblo: '#f5c542', zona: '#e74c3c', bosque: '#2ecc71', rocas: '#95a5a6', lago: '#3498db' };
 const COLOR_ZONA = { caza: '#e67e22', elite: '#9b59b6', jefe: '#c0392b', pvp: '#e84393', segura: '#2ecc71', arena: '#3498db' };
@@ -202,17 +204,20 @@ const MAT_VC = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0
 const MAT_VC_SUAVE = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92 });
 function malla(geo, material, sombra) { const m = new THREE.Mesh(geo, material); m.castShadow = sombra !== false; m.receiveShadow = true; return m; }
 
-registrarDibujo('caja', (el) => { const p = el.props; const m = malla(new THREE.BoxGeometry(p.ancho, p.alto, p.fondo), mat(p.color)); m.position.y = p.alto / 2; return m; });
+// Formas básicas: color y, si se elige, una foto de la biblioteca repetida cada ~1,5 m (no se estira con el tamaño)
+const matForma = (p, color) => p.textura ? matFoto(p.textura, color || p.color) : mat(color || p.color);
+const geoForma = (g, p) => p.textura ? uvEnMetros(g, p.repeticion || 1.5) : g;
+registrarDibujo('caja', (el) => { const p = el.props; const m = malla(geoForma(new THREE.BoxGeometry(p.ancho, p.alto, p.fondo), p), matForma(p)); m.position.y = p.alto / 2; return m; });
 registrarDibujo('plataforma', (el) => {
   const p = el.props, g = new THREE.Group();
-  const cuerpo = malla(new THREE.BoxGeometry(p.ancho, p.grosor * 0.8, p.fondo), mat(p.color)); cuerpo.position.y = p.grosor * 0.4;
+  const cuerpo = malla(geoForma(new THREE.BoxGeometry(p.ancho, p.grosor * 0.8, p.fondo), p), matForma(p)); cuerpo.position.y = p.grosor * 0.4;
   const tapa = malla(new THREE.BoxGeometry(p.ancho + 0.1, p.grosor * 0.2, p.fondo + 0.1), mat(p.borde)); tapa.position.y = p.grosor * 0.9;
   g.add(cuerpo, tapa); return g;
 });
-registrarDibujo('rampa', (el) => { const p = el.props; return malla(geoRampa(p.ancho, p.alto, p.largo), mat(p.color)); });
-registrarDibujo('cilindro', (el) => { const p = el.props; const m = malla(new THREE.CylinderGeometry(p.radio, p.radio, p.alto, 24), mat(p.color)); m.position.y = p.alto / 2; return m; });
+registrarDibujo('rampa', (el) => { const p = el.props; return malla(geoForma(geoRampa(p.ancho, p.alto, p.largo), p), matForma(p)); });
+registrarDibujo('cilindro', (el) => { const p = el.props; const m = malla(geoForma(new THREE.CylinderGeometry(p.radio, p.radio, p.alto, 24), p), matForma(p)); m.position.y = p.alto / 2; return m; });
 registrarDibujo('esfera', (el) => { const p = el.props; const m = malla(new THREE.SphereGeometry(p.radio, 24, 16), mat(p.color)); m.position.y = p.radio; return m; });
-registrarDibujo('muro', (el) => { const p = el.props; const m = malla(new THREE.BoxGeometry(p.largo, p.alto, p.grosor), mat(p.color)); m.position.y = p.alto / 2 - 0.3; return m; });
+registrarDibujo('muro', (el) => { const p = el.props; const m = malla(geoForma(new THREE.BoxGeometry(p.largo, p.alto, p.grosor), p), matForma(p)); m.position.y = p.alto / 2 - 0.3; return m; });
 registrarDibujo('arbol', (el, ctx) => {
   const sp = especieReal(el.props.especie, ctx), glb = E.ARBOLES_GLB[sp];
   if (!glb) { const m = malla(geoArbol(sp), MAT_VC); m.scale.setScalar((el.props.alto || 9) / 10); return m; }
@@ -516,24 +521,41 @@ function texturaRayas(c1, c2, n) {
   for (let k = 0; k < n * 2; k++) { ctx.fillStyle = k % 2 ? c2 : c1; ctx.fillRect(k * 64 / (n * 2), 0, 64 / (n * 2) + 1, 8); }
   const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; return t;
 }
+// Material con una foto de la biblioteca del Creador de Pueblos (assets/texturas, js/texturas-lib.js)
+const cacheFotos = new Map();
+function matFoto(id, color, extra) {
+  const k = id + color + JSON.stringify(extra || {});
+  if (cacheFotos.has(k)) return cacheFotos.get(k);
+  const T = window.TexturasLib;
+  let map = T ? T.textura(THREE, id) : null;
+  if (!map) { // grupos que no están en el catálogo de TexturasLib (setos, hierba): se cargan por su ruta
+    map = new THREE.TextureLoader().load('assets/texturas/' + id + '.jpg');
+    map.wrapS = map.wrapT = THREE.RepeatWrapping; map.colorSpace = THREE.SRGBColorSpace; map.anisotropy = 8;
+  }
+  const m = new THREE.MeshStandardMaterial(Object.assign({ color: map ? color : '#9a8a78', map, roughness: 0.9 }, extra || {}));
+  cacheFotos.set(k, m);
+  return m;
+}
 const cachePiezas = {};
 const pieza = (id, crear) => () => cachePiezas[id] || (cachePiezas[id] = crear());
 const PIEZAS = {
-  poste_madera: pieza('poste_madera', () => ({ geo: new THREE.BoxGeometry(0.14, 1.15, 0.14).translate(0, 0.5, 0), mat: mat('#6f4d2f') })),
-  riel_madera: pieza('riel_madera', () => ({ geo: new THREE.BoxGeometry(1, 0.11, 0.05), mat: mat('#8a6440') })),
+  poste_madera: pieza('poste_madera', () => ({ geo: new THREE.BoxGeometry(0.14, 1.15, 0.14).translate(0, 0.5, 0), mat: matFoto('madera/t01', '#c9b49a') })),
+  riel_madera: pieza('riel_madera', () => ({ geo: new THREE.BoxGeometry(1, 0.11, 0.05), mat: matFoto('madera/t07', '#d8c6ae') })),
   poste_metal: pieza('poste_metal', () => ({ geo: new THREE.BoxGeometry(0.1, 0.8, 0.12).translate(0, 0.3, 0), mat: mat('#9aa1a8', { metalness: 0.15, roughness: 0.55 }) })),
   bionda: pieza('bionda', () => ({ geo: new THREE.BoxGeometry(1, 0.32, 0.07), mat: mat('#d3d8de', { metalness: 0.2, roughness: 0.35 }) })),
   neumatico: pieza('neumatico', () => ({ geo: new THREE.CylinderGeometry(0.34, 0.34, 0.24, 14).translate(0, 0.12, 0), mat: new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.92 }) })),
   muro: pieza('muro', () => {
     const f = new THREE.Shape([[-0.3, 0], [0.3, 0], [0.3, 0.08], [0.12, 0.3], [0.09, 0.9], [-0.09, 0.9], [-0.12, 0.3], [-0.3, 0.08]].map(([x, y]) => new THREE.Vector2(x, y)));
     const g = new THREE.ExtrudeGeometry(f, { depth: 1, bevelEnabled: false }).translate(0, 0, -0.5).rotateY(Math.PI / 2);
-    return { geo: g, mat: new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.9 }) };
+    return { geo: uvEnMetros(g, 1.5), mat: Object.assign(matFoto('piedra/t07', '#ffffff'), {}) };
   }),
   poste_cinta: pieza('poste_cinta', () => ({ geo: new THREE.CylinderGeometry(0.025, 0.03, 1.0, 6).translate(0, 0.5, 0), mat: mat('#e8e8e8'), sombra: false })),
   cinta: pieza('cinta', () => { const t = texturaRayas('#e3262b', '#ffffff', 4); return { geo: new THREE.PlaneGeometry(1, 0.08), mat: new THREE.MeshStandardMaterial({ map: t, side: THREE.DoubleSide, roughness: 0.6 }), sombra: false }; }),
-  bala_paja: pieza('bala_paja', () => ({ geo: pintarGeo(new THREE.BoxGeometry(1.2, 0.6, 0.6, 3, 2, 2).translate(0, 0.3, 0), '#d8b660', 0.18, 9), mat: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1 }) })),
+  bala_paja: pieza('bala_paja', () => ({ geo: uvEnMetros(new THREE.BoxGeometry(1.2, 0.6, 0.6).translate(0, 0.3, 0), 0.6), mat: matFoto('hierba/t03', '#f2e2b0') })),
   cono: pieza('cono', () => ({ geo: unir([pintarGeo(new THREE.ConeGeometry(0.17, 0.5, 12).translate(0, 0.27, 0), '#f26a1b', 0), pintarGeo(new THREE.BoxGeometry(0.4, 0.03, 0.4).translate(0, 0.015, 0), '#222222', 0)]), mat: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6 }) })),
   panel_publi: pieza('panel_publi', () => ({ geo: new THREE.BoxGeometry(2.8, 0.9, 0.06).translate(0, 0.85, 0), mat: new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.5 }) })),
+  seto: pieza('seto', () => ({ geo: uvEnMetros(new THREE.BoxGeometry(1, 1.3, 0.9).translate(0, 0.62, 0), 1.2), mat: matFoto('setos/t01', '#ffffff', { roughness: 1 }) })),
+  muro_piedra: pieza('muro_piedra', () => ({ geo: uvEnMetros(new THREE.BoxGeometry(1, 1.0, 0.6).translate(0, 0.45, 0), 1.2), mat: matFoto('piedra/t01', '#ffffff') })),
   pata_publi: pieza('pata_publi', () => ({ geo: new THREE.BoxGeometry(0.06, 0.45, 0.4).translate(0, 0.22, 0), mat: mat('#555a60') }))
 };
 const COLORES_PUBLI = ['#1f6fd1', '#d62a2a', '#f2c12e', '#2c9a4b', '#ffffff', '#111111'].map(c => new THREE.Color(c));
@@ -582,6 +604,8 @@ function colocarBarreras(esc, c, piezas) {
           case 'guardarrail': poner('poste_metal', p, p.giro); if (sig) tramo('bionda', p, sig, 0.55); break;
           case 'muro': if (sig) tramo('muro', p, sig, 0, new THREE.Color(k % 2 ? '#c9c4ba' : '#bdb7ac')); break;
           case 'cinta': poner('poste_cinta', p, p.giro); if (sig) tramo('cinta', p, sig, 0.92); break;
+          case 'seto': if (sig) tramo('seto', p, sig, 0, new THREE.Color().setHSL(0.3, 0.2, 0.85 + rnd() * 0.15)); break;
+          case 'muro_piedra': if (sig) tramo('muro_piedra', p, sig, 0); break;
           case 'neumaticos': {
             const col = k % 2 ? new THREE.Color('#1c1c1c') : (k % 4 === 0 ? new THREE.Color('#e9e9e9') : new THREE.Color('#c62828'));
             for (let h = 0; h < 3; h++) poner('neumatico', { x: p.x, y: p.y + h * 0.24, z: p.z }, rnd() * 6, 1, h === 2 ? col : new THREE.Color('#1c1c1c'));
@@ -625,6 +649,11 @@ export class Escena3D {
     this.raiz.add(this.vegetacion.grupo);
     this.pradera = new Pradera({ renderer: this.renderer, calidad: this.o.calidad });
     this.raiz.add(this.pradera.grupo);
+    // Texturas reales del suelo y de los caminos: mientras cargan se ven los colores planos
+    cargarSuelos(this.o.calidad === 'baja' ? 256 : 512).then(s => {
+      this.suelos = s;
+      if (this.esc) { this.construirTerreno(); this.construirCaminos(); }
+    }).catch(() => {});
     this._crearAmbiente();
     this.texSuelo = texturaRuido(256, 200, 55, 11);
   }
@@ -717,7 +746,9 @@ export class Escena3D {
     // uv en metros para la textura de detalle
     const uv = geo.attributes.uv;
     for (let k = 0; k < uv.count; k++) uv.setXY(k, uv.getX(k) * t.tam / 6, uv.getY(k) * t.tam / 6);
-    const m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.96, map: this.texSuelo });
+    let m;
+    if (this.suelos) { this.mezcla = crearMezcla(r); m = materialTerreno(this.suelos, this.mezcla, esc); }
+    else { this.mezcla = null; m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.96, map: this.texSuelo }); }
     this.terreno = new THREE.Mesh(geo, m);
     this.terreno.receiveShadow = true; this.terreno.castShadow = this.o.calidad === 'alta';
     this.terreno.name = 'terreno';
@@ -735,7 +766,7 @@ export class Escena3D {
     const esc = this.esc, t = esc.terreno, r = t.res;
     if (!this.terreno || this.terreno.geometry.attributes.position.count !== r * r) return this.construirTerreno();
     const pos = this.terreno.geometry.attributes.position, col = this.terreno.geometry.attributes.color;
-    if (!reg) { reg = { i0: 0, i1: r - 1, j0: 0, j1: r - 1 }; this._rango = E.rangoAlturas(esc); }
+    if (!reg) { reg = { i0: 0, i1: r - 1, j0: 0, j1: r - 1 }; E.olvidarRango(esc); this._rango = E.rangoCache(esc); }
     const i0 = Math.max(0, reg.i0 - 1), i1 = Math.min(r - 1, reg.i1 + 1), j0 = Math.max(0, reg.j0 - 1), j1 = Math.min(r - 1, reg.j1 + 1);
     const cols = E.MATERIALES.map(m => new THREE.Color(m.color));
     if (!this._ruidoColor || this._ruidoColor.semilla !== t.gen.semilla) { this._ruidoColor = E.crearRuido((t.gen.semilla || 1) + 555); this._ruidoColor.semilla = t.gen.semilla; }
@@ -743,7 +774,7 @@ export class Escena3D {
     for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
       const k = j * r + i;
       if (!soloColor) pos.setY(k, t.alturas[k]);
-      const c = cols[E.materialEn(esc, i, j, this._rango)] || cols[1];
+      const c = this.mezcla ? BLANCO_SUELO : (cols[E.materialEn(esc, i, j, this._rango)] || cols[1]);
       // variación: grano fino por vértice + manchas grandes, para que el suelo no sea plano
       const x = m0 + i * p, z = m0 + j * p;
       const mancha = N.fbm(x / 90, z / 90, 3);
@@ -757,6 +788,7 @@ export class Escena3D {
       col.setXYZ(k, cr, cg, cb);
     }
     pos.needsUpdate = true; col.needsUpdate = true;
+    if (this.mezcla) actualizarMezcla(this.mezcla, esc, { i0, i1, j0, j1 }, this._rango);
     if (this.pradera) this.pradera.invalidar(i0 === 0 && j0 === 0 && i1 === r - 1 && j1 === r - 1 ? null : reg);
     if (!soloColor) {
       this.terreno.geometry.computeVertexNormals();
@@ -840,7 +872,15 @@ export class Escena3D {
     const cache = {}, colDe = tp => cache[tp] || (cache[tp] = colTipo(tp));
     const blanco = new THREE.Color('#f2f2f2');
     const hayLineas = c.bordes || c.tipo === 'asfalto' || (c.tramos || []).some(t => t.tipo === 'asfalto');
-    const cruz = hayLineas ? [-0.5, -0.47, -0.462, -0.448, -0.44, -0.2, 0, 0.2, 0.44, 0.448, 0.462, 0.47, 0.5] : [-0.5, -0.38, -0.2, 0, 0.2, 0.38, 0.5];
+    const tex = !!this.suelos;
+    // con texturas: dos columnas más por fuera, transparentes, para fundir el borde con el terreno
+    const cruz = (hayLineas ? [-0.5, -0.47, -0.462, -0.448, -0.44, -0.2, 0, 0.2, 0.44, 0.448, 0.462, 0.47, 0.5] : [-0.5, -0.42, -0.2, 0, 0.2, 0.42, 0.5]);
+    if (tex) { cruz.unshift(-0.56); cruz.push(0.56); }
+    const tipos = E.TIPOS_CAMINO.map(t => t[0]);
+    let pesos = null;
+    const pesosEn = d => { const p = new Array(8).fill(0); for (const dd of [d - 1.5, d, d, d + 1.5]) p[Math.max(0, tipos.indexOf(E.superficieEn(c, dd)))] += 0.25; return p; };
+    const escTex = escalaCamino(c.tipo);
+    const pA = [], pB = [], extra = [];
     let base = null, lineas = false;
     const muestraSup = d => {
       const a = colDe(E.superficieEn(c, d - 1.5)), b = colDe(E.superficieEn(c, d)), cc = colDe(E.superficieEn(c, d + 1.5));
@@ -856,21 +896,38 @@ export class Escena3D {
       let dx = b.x - a.x, dz = b.z - a.z; const l = Math.hypot(dx, dz) || 1; dx /= l; dz /= l;
       const nx = -dz, nz = dx;
       muestraSup(mu[k].d);
+      if (tex) pesos = pesosEn(mu[k].d);
       for (let q = 0; q < W; q++) {
         const u = cruz[q], x = mu[k].x + nx * u * c.ancho, z = mu[k].z + nz * u * c.ancho;
-        const y = Math.max(E.alturaEn(esc, x, z), agua) + (Math.abs(u) > 0.49 ? 0.04 : 0.14);
+        const y = Math.max(E.alturaEn(esc, x, z), agua) + (Math.abs(u) > 0.49 ? 0.06 : 0.14);
         pos.push(x, y, z);
-        const cc = colorEn(u), v = 0.95 + ((k * 7 + q * 13) % 10) / 100;
-        col.push(cc.r * v, cc.g * v, cc.b * v);
-        uv.push((u + 0.5) * c.ancho / 6, mu[k].d / 6);
+        const v = 0.95 + ((k * 7 + q * 13) % 10) / 100;
+        if (tex) {
+          const au = Math.abs(u), linea = lineas && au > 0.445 && au < 0.465 ? 1 : 0;
+          const borde = au > 0.47 ? 0.8 : 1; // arcén algo más oscuro
+          col.push(v * borde, v * borde, v * borde);
+          pA.push(pesos[0], pesos[1], pesos[2], pesos[3]); pB.push(pesos[4], pesos[5], pesos[6], pesos[7]);
+          extra.push(0, linea, au > 0.55 ? 0 : au > 0.5 ? 0.55 : 1);
+          uv.push((u + 0.5) * c.ancho / escTex, mu[k].d / escTex);
+        } else {
+          const cc = colorEn(u);
+          col.push(cc.r * v, cc.g * v, cc.b * v);
+          uv.push((u + 0.5) * c.ancho / 6, mu[k].d / 6);
+        }
       }
       if (k > 0) for (let q = 0; q < W - 1; q++) { const a0 = (k - 1) * W + q, a1 = a0 + 1, b0 = k * W + q, b1 = b0 + 1; idx.push(a0, a1, b0, a1, b1, b0); }
     }
     g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
     g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
     g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    if (tex) {
+      g.setAttribute('aPesosA', new THREE.Float32BufferAttribute(pA, 4));
+      g.setAttribute('aPesosB', new THREE.Float32BufferAttribute(pB, 4));
+      g.setAttribute('aExtra', new THREE.Float32BufferAttribute(extra, 3));
+    }
     g.setIndex(idx); g.computeVertexNormals();
-    const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: c.tipo === 'asfalto' ? 0.75 : 0.95, map: this.texSuelo, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
+    if (tex && !this._matCamino) this._matCamino = materialCamino(this.suelos);
+    const m = new THREE.Mesh(g, tex ? this._matCamino : new THREE.MeshStandardMaterial({ vertexColors: true, roughness: c.tipo === 'asfalto' ? 0.75 : 0.95, map: this.texSuelo, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
     m.receiveShadow = true; m.userData.caminoId = c.id;
     return m;
   }

@@ -145,19 +145,21 @@
   }
   const COLOR = (k, n) => ({ k, n: n || 'Color', t: 'color' });
   const NUM = (k, n, min, max, paso) => ({ k, n, t: 'num', min, max, paso: paso || 0.5 });
+  // Foto de la biblioteca del Creador de Pueblos (assets/texturas: 'madera/t01', 'piedra/t03'…); '' = solo color
+  const TEX = { k: 'textura', n: 'Textura', t: 'textura' };
 
-  registrarTipo({ id: 'caja', nombre: 'Caja', icono: '📦', grupo: 'basicos', props: { ancho: 4, alto: 4, fondo: 4, color: '#b08b5a' },
-    campos: [NUM('ancho', 'Ancho', 0.1, 500), NUM('alto', 'Alto', 0.1, 500), NUM('fondo', 'Fondo', 0.1, 500), COLOR('color')] });
+  registrarTipo({ id: 'caja', nombre: 'Caja', icono: '📦', grupo: 'basicos', props: { ancho: 4, alto: 4, fondo: 4, color: '#ffffff', textura: 'madera/t01' },
+    campos: [NUM('ancho', 'Ancho', 0.1, 500), NUM('alto', 'Alto', 0.1, 500), NUM('fondo', 'Fondo', 0.1, 500), TEX, COLOR('color', 'Color (tiñe la textura)')] });
   registrarTipo({ id: 'plataforma', nombre: 'Plataforma', icono: '▬', grupo: 'basicos', props: { ancho: 8, grosor: 1, fondo: 8, color: '#8c7a6b', borde: '#5fa04a' },
-    campos: [NUM('ancho', 'Ancho', 0.5, 500), NUM('fondo', 'Fondo', 0.5, 500), NUM('grosor', 'Grosor', 0.1, 50, 0.1), COLOR('color', 'Color'), COLOR('borde', 'Color de arriba')] });
+    campos: [NUM('ancho', 'Ancho', 0.5, 500), NUM('fondo', 'Fondo', 0.5, 500), NUM('grosor', 'Grosor', 0.1, 50, 0.1), TEX, COLOR('color', 'Color'), COLOR('borde', 'Color de arriba')] });
   registrarTipo({ id: 'rampa', nombre: 'Rampa', icono: '◢', grupo: 'basicos', props: { ancho: 8, alto: 3, largo: 12, color: '#9a8f80' },
-    campos: [NUM('ancho', 'Ancho', 0.5, 200), NUM('alto', 'Alto', 0.1, 100), NUM('largo', 'Largo', 0.5, 300), COLOR('color')] });
+    campos: [NUM('ancho', 'Ancho', 0.5, 200), NUM('alto', 'Alto', 0.1, 100), NUM('largo', 'Largo', 0.5, 300), TEX, COLOR('color')] });
   registrarTipo({ id: 'cilindro', nombre: 'Cilindro', icono: '⬭', grupo: 'basicos', props: { radio: 2, alto: 6, color: '#a0a4a8' },
-    campos: [NUM('radio', 'Radio', 0.1, 200), NUM('alto', 'Alto', 0.1, 500), COLOR('color')] });
+    campos: [NUM('radio', 'Radio', 0.1, 200), NUM('alto', 'Alto', 0.1, 500), TEX, COLOR('color')] });
   registrarTipo({ id: 'esfera', nombre: 'Esfera', icono: '⚪', grupo: 'basicos', props: { radio: 3, color: '#c9b37a' },
     campos: [NUM('radio', 'Radio', 0.1, 200), COLOR('color')] });
-  registrarTipo({ id: 'muro', nombre: 'Muro', icono: '🧱', grupo: 'basicos', props: { largo: 20, alto: 4, grosor: 1.2, color: '#8d8478' },
-    campos: [NUM('largo', 'Largo', 0.5, 500), NUM('alto', 'Alto', 0.1, 100), NUM('grosor', 'Grosor', 0.1, 20, 0.1), COLOR('color')] });
+  registrarTipo({ id: 'muro', nombre: 'Muro', icono: '🧱', grupo: 'basicos', props: { largo: 20, alto: 4, grosor: 1.2, color: '#ffffff', textura: 'piedra/t01' },
+    campos: [NUM('largo', 'Largo', 0.5, 500), NUM('alto', 'Alto', 0.1, 100), NUM('grosor', 'Grosor', 0.1, 20, 0.1), TEX, COLOR('color', 'Color (tiñe la textura)')] });
 
   // Árboles con modelo .glb (glb/arboles/, preparados con tools/preparar-arboles.mjs). alto: altura del modelo en m.
   // sencillo: especie dibujada por código que los sustituye si se desactivan los árboles realistas.
@@ -311,6 +313,14 @@
     const dz = (h[j1 * r + i] - h[j0 * r + i]) / ((j1 - j0) * p);
     return Math.hypot(dx, dz);
   }
+  // Rango de alturas guardado (para los materiales automáticos punto a punto). Se olvida al cambiar el terreno.
+  const cacheRango = new WeakMap();
+  function rangoCache(esc) {
+    let r = cacheRango.get(esc.terreno.alturas);
+    if (!r) { r = rangoAlturas(esc); cacheRango.set(esc.terreno.alturas, r); }
+    return r;
+  }
+  function olvidarRango(esc) { cacheRango.delete(esc.terreno.alturas); }
   function rangoAlturas(esc) {
     const h = esc.terreno.alturas;
     let mn = Infinity, mx = -Infinity;
@@ -486,10 +496,10 @@
     if (pint) {
       if (!pint.tipo) return null;
       if (alturaEn(esc, x, z) < agua + 0.2) return null;
-      return { tipo: pint.tipo, d: pint.d, suelo: mat || materialAuto(esc, i, j) };
+      return { tipo: pint.tipo, d: pint.d, suelo: mat || materialAuto(esc, i, j, rangoCache(esc)) };
     }
     if (!(t.hierbaAuto > 0)) return null;
-    const suelo = mat || materialAuto(esc, i, j);
+    const suelo = mat || materialAuto(esc, i, j, rangoCache(esc));
     const f = SUELOS_CON_HIERBA[suelo];
     if (!f) return null;
     if (pendienteIdx(esc, i, j) > 0.75) return null;
@@ -524,7 +534,7 @@
   // ---------------------------------------------------------------------------
   // 6. Caminos y pistas (curvas Catmull-Rom por puntos de control)
   // ---------------------------------------------------------------------------
-  const TIPOS_CAMINO = [['tierra', 'Tierra', 3], ['grava', 'Grava', 9], ['asfalto', 'Asfalto (carretera)', 7], ['piedra', 'Empedrado', 13], ['arena', 'Arena', 5], ['barro', 'Barro', 8], ['nieve', 'Nieve pisada', 6]];
+  const TIPOS_CAMINO = [['tierra', 'Tierra', 3], ['grava', 'Grava', 9], ['asfalto', 'Asfalto (carretera)', 7], ['piedra', 'Empedrado', 13], ['arena', 'Arena', 5], ['barro', 'Barro', 8], ['nieve', 'Nieve pisada', 6], ['adoquin', 'Adoquín', 13]];
 
   function crearCamino(esc, opts) {
     opts = opts || {};
@@ -549,7 +559,9 @@
     ['muro', 'Muro de hormigón', { paso: 2, alto: 0.9 }],
     ['balas_paja', 'Balas de paja', { paso: 1.3, alto: 0.6 }],
     ['conos', 'Conos', { paso: 3, alto: 0.5 }],
-    ['valla_publi', 'Vallas publicitarias', { paso: 3, alto: 1.2 }]
+    ['valla_publi', 'Vallas publicitarias', { paso: 3, alto: 1.2 }],
+    ['seto', 'Seto', { paso: 2, alto: 1.3 }],
+    ['muro_piedra', 'Muro de piedra', { paso: 2, alto: 1.0 }]
   ];
   const LADOS = [['ambos', 'Los dos lados'], ['izq', 'Izquierda'], ['der', 'Derecha']];
   function largoCamino(camino, muestras) { const mu = muestras || muestrearCamino(camino, 2); return mu.length ? mu[mu.length - 1].d : 0; }
@@ -978,7 +990,7 @@
     FORMATO, VERSION, RPG_BASE, MATERIALES, BIOMAS, TIPOS, GRUPOS, PLANTILLAS, TIPOS_TERRENO, TIPOS_CAMINO, ESPECIES, ESTILOS_PUEBLO, ARBOLES_GLB, MEZCLA_BIOMA, registrarArbolGlb,
     mulberry32, crearAzar, crearRuido, hashTexto, clamp, lerp,
     registrarTipo, registrarPlantilla, leerRuta, escribirRuta, cfgPuebloPorDefecto, radioPueblo,
-    crearVacio, crear, generarTerreno, paso, idx, xDe, aRejilla, dentro, alturaEn, sueloEn, pendienteIdx, rangoAlturas,
+    crearVacio, crear, generarTerreno, paso, idx, xDe, aRejilla, dentro, alturaEn, sueloEn, pendienteIdx, rangoAlturas, rangoCache, olvidarRango,
     materialAuto, materialEn, esculpir, pintar, allanarArea, caida,
     PRADERA, VEG_NADA, codVegetacion, decodVegetacion, vegetacionEn, pintarVegetacion,
     TIPOS_BARRERA, LADOS, largoCamino, enTramo, superficieEn, proyectarEnCamino, caminoEn,

@@ -75,6 +75,8 @@ export class Pradera {
     const clave = tx + ',' + tz + ',' + (lejos ? 1 : 0);
     let t = this.cache.get(clave);
     if (t) return t;
+    // Presupuesto por fotograma: lo que no da tiempo se calcula en los siguientes (primero lo más cercano)
+    if (performance.now() > this._limite) { this._pendiente = true; return null; }
     const esc = this.esc, pasoC = lejos ? this.r.pasoLejos : this.r.paso;
     const n = Math.ceil(TESELA / pasoC), pasoR = TESELA / n;
     const listas = {};
@@ -120,7 +122,12 @@ export class Pradera {
     const r = this.r, tMax = Math.ceil(r.lejos / TESELA) + 1;
     const tcx = Math.floor(cx / TESELA), tcz = Math.floor(cz / TESELA);
     const m = this.esc.terreno.tam / 2;
-    for (let a = -tMax; a <= tMax; a++) for (let b = -tMax; b <= tMax; b++) {
+    this._limite = performance.now() + 4;
+    this._pendiente = false;
+    const orden = [];
+    for (let a = -tMax; a <= tMax; a++) for (let b = -tMax; b <= tMax; b++) orden.push([a, b, a * a + b * b]);
+    orden.sort((p, q) => p[2] - q[2]);
+    for (const [a, b] of orden) {
       const tx = tcx + a, tz = tcz + b;
       const x0 = tx * TESELA, z0 = tz * TESELA;
       if (x0 > m || z0 > m || x0 + TESELA < -m || z0 + TESELA < -m) continue;
@@ -134,6 +141,7 @@ export class Pradera {
       if (dMax > r.cerca - 7) niveles.push(true);
       for (const lejos of niveles) {
         const t = this._tesela(tx, tz, lejos);
+        if (!t) continue;
         for (const [tipo, d] of Object.entries(t)) {
           const capa = this.capas[tipo][lejos ? 'lejos' : 'cerca'], k = lejos ? 'lejos' : 'cerca';
           const i0 = cuenta[tipo][k], libre = capa.instanceMatrix.count - i0;
@@ -148,8 +156,11 @@ export class Pradera {
     }
     for (const tipo of TIPOS) for (const k of ['cerca', 'lejos']) {
       const capa = this.capas[tipo][k];
-      capa.count = cuenta[tipo][k];
-      capa.instanceMatrix.needsUpdate = true; capa.instanceColor.needsUpdate = true; capa.geometry.attributes.aCell.needsUpdate = true;
+      const n = capa.count = cuenta[tipo][k];
+      // solo se sube a la GPU la parte usada de cada búfer
+      for (const [a, ancho] of [[capa.instanceMatrix, 16], [capa.instanceColor, 3], [capa.geometry.attributes.aCell, 2]]) {
+        a.clearUpdateRanges(); if (n) a.addUpdateRange(0, n * ancho); a.needsUpdate = n > 0;
+      }
     }
     this.cuenta = cuenta;
   }
@@ -164,7 +175,7 @@ export class Pradera {
     const lejos = alto > this.r.lejos * 0.9;
     this.grupo.visible = !lejos;
     if (lejos) return;
-    if (!this.centro || Math.hypot(cx - this.centro.x, cz - this.centro.z) > 3) {
+    if (!this.centro || this._pendiente || Math.hypot(cx - this.centro.x, cz - this.centro.z) > 4) {
       this.centro = { x: cx, z: cz };
       this._juntar(cx, cz);
     }

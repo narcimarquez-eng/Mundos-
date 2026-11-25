@@ -772,6 +772,14 @@ function controlCampo(c, v, fn) {
     case 'bool': return casilla(c.n, v, fn);
     case 'sel': return selector(c.n, v, c.op, fn);
     case 'texto': return texto(c.n, v, fn, c.k === 'notas');
+    case 'textura': {
+      const cont = h('div', { class: 'campo ancho' });
+      if (window.TexturasLib) {
+        window.TexturasLib.selector(cont, { etiqueta: c.n, valor: v || null, alCambiar: nv => fn(nv || '') });
+        cont.append(boton('Sin textura', () => fn('')));
+      } else cont.append(h('label', null, c.n + ': ' + (v || '—')));
+      return cont;
+    }
     case 'glb': case 'modelo': return h('div', { class: 'campo ancho' }, h('label', null, c.n + ': ' + (v ? nombreModelo(v) : '—')),
       boton('🧊 Elegir modelo…', async () => { const r = await elegirModelo(c.grupo || null); if (r) fn(r); }));
     default: return texto(c.n, v, fn);
@@ -1012,7 +1020,8 @@ function volverAqui() { return location.origin + location.pathname + '?id=' + en
 async function abrirCreadorPueblos(el) {
   await guardarYa();
   const payload = { sessionId: 'esc:' + esc.id, townId: el.id, name: el.nombre, cfg: el.props.cfg, volver: volverAqui(), claveRetorno: RET_PUEBLO };
-  location.href = baseRpg() + 'creador-de-pueblos.html#mundo=' + encodeURIComponent(JSON.stringify(payload));
+  // El Creador de Pueblos viene incluido en esta app (copia de Creador-de-mundos-Rpg): mismo sitio, la vuelta siempre funciona
+  location.href = 'creador-de-pueblos.html#mundo=' + encodeURIComponent(JSON.stringify(payload));
 }
 async function abrirCreadorMazmorras(el) {
   await guardarYa();

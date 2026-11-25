@@ -50,6 +50,16 @@ Los que quedan fuera de la vista no se dibujan. Las copas se mueven con el vient
 
 **Añadir un árbol nuevo:** deja el `.glb` en `modelos-fuente/arboles/` (dos mallas: tronco opaco y copa con transparencia recortada, como los de Blender que ya hay), ejecuta `cd tools && npm install && node preparar-arboles.mjs` y añádelo a `ARBOLES_GLB` en `js/escenario-core.js`. La herramienta pasa las texturas a WebP de 1024 px, comprime la geometría y crea la versión media (12,6 MB de los cuatro originales → 3,8 MB).
 
+### Texturas reales
+- **Terreno:** cada material del suelo es una textura de ambientCG (CC0, `assets/terreno/atlas.jpg`): hierba, hierba seca, tierra, roca, arena, nieve, asfalto, barro, grava, musgo, ceniza, hielo y adoquín. Se mezclan suavemente donde cambia el material y se repiten cada 4 m, muestreadas a dos escalas para que no se note la repetición (`js/suelos.js`).
+- **Caminos:** fotos de la biblioteca del Creador de Pueblos (`assets/texturas/suelo`): la grava es «tierra con grava», la tierra «tierra con piedras», el empedrado y el adoquín sus fotos; asfalto, arena, barro y nieve del atlas. Los bordes se funden con el terreno y los tramos de superficie se mezclan en 3 m.
+- **Vallas y objetos:** las vallas de madera, el muro, las balas de paja, el seto y el muro de piedra usan esas fotos. Las formas básicas (caja, plataforma, rampa, cilindro, muro) tienen un campo **Textura** con el selector de la biblioteca (tejados, madera, suelo, piedra, agua…); el color tiñe la foto y la textura se repite cada 1,5 m sin estirarse.
+- Mientras cargan las texturas se ven los colores planos de antes.
+- Licencias: `docs/ASSETS-CREADOR-RPG.md` (copiado del Creador RPG).
+
+### Creador de Pueblos incluido
+`creador-de-pueblos.html` y lo que necesita (`js/village-core.js`, `casas-glb.js`, `casa-madera.js`, `arboles.js`, `pueblo-edits.js`, `character.js`, `three-puente.js`, `puestos-datos.js`, `texturas-lib.js`, `glb/pueblo/`, los puentes de `glb/`, `assets/` y `enemigos-editor/`) son una copia de [Creador-de-mundos-Rpg](https://github.com/narcimarquez-eng/Creador-de-mundos-Rpg). «🏗 Abrir en el Creador de Pueblos» abre esta copia, así que la vuelta con el diseño funciona siempre, publiques donde publiques. Si cambia allí, hay que volver a copiar esos archivos.
+
 ### Hierba, trigo y flores
 El suelo se cubre de matas de hierba, trigo, flores, hierba alta o bambú, dibujadas con los atlas del Creador RPG (`js/pradera-atlas.js`, texturas pintadas en un lienzo, sin archivos) y movidas por el viento.
 - **Automática:** sobre los suelos de hierba, hierba seca y musgo crece hierba sola, con claros, praderas de flores y matorral alto. Su densidad se cambia en *🖌 Pintar → Hierba y flores* («Hierba automática en todo el escenario»; 0 la quita).
@@ -71,7 +81,7 @@ Se pueden ajustar a una altura en metros. Las animaciones del modelo (si tiene) 
 - **🕳 Mazmorra**: entrada en el terreno; el interior se diseña en el **Creador de Mazmorras** con el mismo ir y volver.
 - **🐉 Enemigo** suelto.
 
-La dirección del Creador RPG se cambia en *Escenario → Enlaces*. Por defecto es `https://narcimarquez-eng.github.io/Creador-de-mundos-Rpg/`. Para que la vuelta desde el Creador de Pueblos o de Mazmorras funcione, las dos apps tienen que estar en el mismo sitio (por ejemplo, ambos repositorios publicados con GitHub Pages del mismo usuario): se comunican por el almacenamiento del navegador.
+La dirección del Creador RPG se cambia en *Escenario → Enlaces*. Por defecto es `https://narcimarquez-eng.github.io/Creador-de-mundos-Rpg/`; de ahí salen la biblioteca de modelos y el Creador de Mazmorras. El Creador de Pueblos viene incluido (ver arriba). Para que la vuelta desde el Creador de Mazmorras funcione, las dos apps tienen que estar en el mismo sitio (por ejemplo, ambos repositorios en GitHub Pages del mismo usuario).
 
 ## Visor
 - 🛰 **Órbita**: girar alrededor, acercar y desplazar.
