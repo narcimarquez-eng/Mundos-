@@ -74,6 +74,14 @@ Los pueblos se ven **completos** (casas, calles, plaza, murallas, farolas, árbo
 - «↪ Llevar caminos a las salidas» mantiene las salidas y lleva cada camino a la más cercana.
 - En el Creador de Pueblos, abierto desde el escenario, el campo **Salidas hacia el mundo** se puede cambiar (0° este, 90° sur, 180° oeste, 270° norte): al «Guardar y volver», los caminos se llevan solos a las nuevas salidas. Dentro del pueblo, las calles se dibujan a mano con la paleta de edición del creador.
 
+### Pueblo andaluz
+El Creador de Pueblos tiene el estilo **Pueblo Andaluz** y el tipo de casas **«Pueblo andaluz: casas encaladas»** con cuatro modelos (`modelos-fuente/casas/`, preparados con `node tools/preparar-casas.mjs`): casa de una planta en dos versiones, casa rústica con buganvilla y casa de dos plantas con balcones. Cerca de la plaza hay más casas de dos plantas y hacia las afueras más rústicas. Para que no parezcan copiadas, cada casa cambia:
+- el **color del encalado** (blanco, crudo, albero, ocre, azulado, rosado…): solo se tiñe la cal de las paredes, no las tejas, la madera ni las rejas;
+- las **flores** (geranios rojos, rosas, blancos, morados, naranjas), la **buganvilla**, las **macetas** (de barro o azules) y la **forja**;
+- la **fachada en espejo** (la puerta y las ventanas al otro lado), además del tamaño y el giro de siempre.
+
+Con el trazado **«casas adosadas»** salen calles de casas en hilera. El pueblo del escenario de ejemplo es andaluz.
+
 ### Creador de Pueblos incluido
 `creador-de-pueblos.html` y lo que necesita (`js/village-core.js`, `casas-glb.js`, `casa-madera.js`, `arboles.js`, `pueblo-edits.js`, `character.js`, `three-puente.js`, `puestos-datos.js`, `texturas-lib.js`, `glb/pueblo/`, los puentes de `glb/`, `assets/` y `enemigos-editor/`) son una copia de [Creador-de-mundos-Rpg](https://github.com/narcimarquez-eng/Creador-de-mundos-Rpg). «🏗 Abrir en el Creador de Pueblos» abre esta copia, así que la vuelta con el diseño funciona siempre, publiques donde publiques. Si cambia allí, hay que volver a copiar esos archivos.
 

@@ -1,0 +1,22 @@
+<!doctype html><html><head><meta charset="utf-8">
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/"}}</script>
+<style>body{margin:0;background:#9cc}</style></head><body>
+<script type="module">
+// Herramienta de revisión: dibuja un .glb desde cuatro lados (?m=ruta). La usan las pruebas.
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+const r = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true }); r.setSize(1200, 300); document.body.appendChild(r.domElement);
+r.setScissorTest(true);
+const s = new THREE.Scene(); s.background = new THREE.Color('#9cc');
+s.add(new THREE.HemisphereLight('#fff', '#665', 1.4)); const d = new THREE.DirectionalLight('#fff', 2); d.position.set(5, 10, 7); s.add(d);
+const g = await new GLTFLoader().loadAsync(new URLSearchParams(location.search).get('m'));
+s.add(g.scene);
+const b = new THREE.Box3().setFromObject(g.scene), c = b.getCenter(new THREE.Vector3()), t = b.getSize(new THREE.Vector3()).length();
+const nodos = []; g.scene.traverse(o => { if (o.isMesh) { const bb = new THREE.Box3().setFromObject(o); nodos.push(o.name + ' ' + bb.min.toArray().map(v => v.toFixed(1)) + ' / ' + bb.max.toArray().map(v => v.toFixed(1))); } });
+window.info = { min: b.min.toArray(), max: b.max.toArray(), nodos };
+[[0, 0.3, 1, '+Z'], [1, 0.3, 0, '+X'], [0, 0.3, -1, '-Z'], [-1, 0.3, 0, '-X']].forEach(([x, y, z], i) => {
+  const cam = new THREE.PerspectiveCamera(40, 1, 0.1, 500); cam.position.set(c.x + x * t * 1.1, c.y + y * t * 1.1, c.z + z * t * 1.1); cam.lookAt(c);
+  r.setViewport(i * 300, 0, 300, 300); r.setScissor(i * 300, 0, 300, 300); r.render(s, cam);
+});
+window.listo = true;
+</script></body></html>

@@ -4,6 +4,8 @@
  * Modelos (glb/pueblo/, los genera tools/preparar-casas-glb.mjs):
  *   casa_entramado   casa de entramado con fachada pintada; se cambian el tejado y la piedra
  *   cabana           cabaña de troncos; se cambian el tejado, la madera y el zócalo de piedra
+ *   casa_andaluza_5v, casa_andaluza_5v_b, casa_rustica, casa_dos_plantas   familia «andaluza» (pueblo andaluz):
+ *                    color del encalado, flores, buganvillas, macetas y forja, y la casa en espejo
  * Cada uno tiene su *_lejos.glb (≈ 10–30 % de los triángulos y texturas de 128 px).
  *
  * Para que un pueblo no parezca copiado y pegado:
@@ -56,8 +58,32 @@
         madera_tablas: { igualA: 'madera_troncos' },
         piedra: { grupo: 'piedra', opciones: ['t01', 't02', 't03', 't04', 't05', 't06', 't07', 't08', 't09', 't10'], repetir: 1 }
       }
-    }
+    },
+
+    // --- Pueblo andaluz (modelos-fuente/casas/, preparados con tools/preparar-casas.mjs) ---
+    // Casas con fachada de foto. La variedad sale de: el color del encalado (solo se tiñe lo blanco de las paredes,
+    // no las tejas ni la madera), las flores, las buganvillas y las macetas, y de dibujar la casa en espejo.
+    casa_andaluza_5v: { familia: 'andaluza', espejo: true, huella: [8.2, 6.4], cambiables: { CA5_Foto: 'encalado', CA5_Plantas: 'plantas' } },
+    casa_andaluza_5v_b: { familia: 'andaluza', espejo: true, huella: [8.2, 6.4], cambiables: { CA5B_Foto: 'encalado', CA5B_Plantas: 'plantas' } },
+    casa_rustica: { familia: 'andaluza', espejo: true, huella: [9.4, 8.6], cambiables: { CR_Foto: 'encalado', CR_FlorMaceta: 'flores', CR_Maceta: 'macetas', CR_BuganvillaFoto: 'buganvilla', CR_Hojas: 'plantas' } },
+    casa_dos_plantas: { familia: 'andaluza', espejo: true, huella: [12.2, 12.2], cambiables: { CD_Foto: 'encalado', CD_Flores: 'flores', CD_Maceta: 'macetas', CD_Forja: 'forja', CD_PlantasFoto: 'plantas', CD_Hojas: 'plantas' } }
   };
+  // Papeles comunes de la familia andaluza: tintes (multiplican el color del material)
+  const PAPELES_ANDALUCES = {
+    // encalado: solo afecta a lo blanco de la fachada (ver materialVariante)
+    encalado: { soloTinte: true, encalado: true, tintes: [[1, 1, 1], [1, 1, 1], [1, 0.99, 0.95], [1, 0.9, 0.62], [1, 0.82, 0.5], [0.93, 0.96, 1.0], [1, 0.88, 0.84], [0.97, 0.97, 0.88], [1, 0.95, 0.8], [0.88, 0.93, 0.98]] },
+    // flores, macetas y forja: color absoluto (geranios rojos, rosas, blancos, morados, naranjas; macetas de barro o azules)
+    flores: { soloTinte: true, absoluto: true, tintes: [[0.8, 0.05, 0.08], [0.9, 0.35, 0.6], [0.92, 0.9, 0.9], [0.45, 0.12, 0.7], [0.95, 0.45, 0.05], [0.75, 0.05, 0.4]] },
+    buganvilla: { soloTinte: true, tintes: [[1, 1, 1], [1.25, 0.6, 0.75], [1.3, 0.55, 0.45], [0.95, 0.75, 1.2], [1.2, 1.0, 1.0]] },
+    macetas: { soloTinte: true, absoluto: true, tintes: [[0.5, 0.2, 0.09], [0.45, 0.17, 0.08], [0.07, 0.2, 0.62], [0.78, 0.7, 0.56], [0.1, 0.32, 0.72]] },
+    plantas: { soloTinte: true, tintes: [[1, 1, 1], [0.9, 1.05, 0.85], [1.05, 1.0, 0.85], [0.85, 0.95, 0.9]] },
+    forja: { soloTinte: true, absoluto: true, tintes: [[0.02, 0.02, 0.022], [0.03, 0.12, 0.07], [0.02, 0.02, 0.022], [0.15, 0.04, 0.03]] }
+  };
+  Object.values(MODELOS).forEach(def => {
+    Object.entries(def.cambiables).forEach(([k, v]) => { if (typeof v === 'string') def.cambiables[k] = PAPELES_ANDALUCES[v]; });
+  });
+  const ANDALUZAS = Object.keys(MODELOS).filter(k => MODELOS[k].familia === 'andaluza');
+  const BASICOS = Object.keys(MODELOS).filter(k => !MODELOS[k].familia);
 
   const PIEZAS = ['fuente', 'banco', 'barril', 'lenera', 'tocon', 'farol', 'jardinera', 'jardinera_arbol', 'valla', 'muro_patio', 'pino'];
 
@@ -109,15 +135,41 @@
     return out;
   }
 
+  // Copia en espejo (x → −x) de un prototipo: se invierte el orden de los triángulos para que sigan mirando fuera
+  function espejar(THREE, lista) {
+    return lista.map(p => {
+      const g = p.geometria.clone();
+      g.applyMatrix4(new THREE.Matrix4().makeScale(-1, 1, 1));
+      if (g.index) {
+        const a = g.index.array;
+        for (let i = 0; i < a.length; i += 3) { const t = a[i + 1]; a[i + 1] = a[i + 2]; a[i + 2] = t; }
+        g.index.needsUpdate = true;
+      } else {
+        for (const at of Object.values(g.attributes)) {
+          const k = at.itemSize, arr = at.array;
+          for (let i = 0; i < at.count; i += 3) for (let c = 0; c < k; c++) { const t = arr[(i + 1) * k + c]; arr[(i + 1) * k + c] = arr[(i + 2) * k + c]; arr[(i + 2) * k + c] = t; }
+          at.needsUpdate = true;
+        }
+      }
+      g.userData.casasGLB = true; g.computeBoundingSphere();
+      return { geometria: g, material: p.material, nombre: p.nombre };
+    });
+  }
+
   const protos = {};
-  let promesaCarga = null;
-  function cargar(THREE, base = BASE) {
-    if (promesaCarga) return promesaCarga;
-    promesaCarga = Promise.all(Object.keys(MODELOS).map(async clave => {
-      const [cerca, lejos] = await Promise.all([gltf(base + clave + '.glb'), gltf(base + clave + '_lejos.glb')]);
-      protos[clave] = { cerca: aplanar(THREE, cerca.scene, false), lejos: aplanar(THREE, lejos.scene, true) };
-    })).then(() => protos).catch(err => { promesaCarga = null; throw err; });
-    return promesaCarga;
+  const promesas = {};
+  // Carga los modelos pedidos (por defecto los de siempre: entramado y cabaña)
+  function cargar(THREE, base = BASE, claves = BASICOS) {
+    return Promise.all(claves.filter(c => MODELOS[c]).map(clave => {
+      if (!promesas[clave]) {
+        promesas[clave] = Promise.all([gltf(base + clave + '.glb'), gltf(base + clave + '_lejos.glb')]).then(([cerca, lejos]) => {
+          const p = { cerca: aplanar(THREE, cerca.scene, false), lejos: aplanar(THREE, lejos.scene, true) };
+          if (MODELOS[clave].espejo) { p.cercaEspejo = espejar(THREE, p.cerca); p.lejosEspejo = espejar(THREE, p.lejos); }
+          protos[clave] = p;
+        }).catch(err => { delete promesas[clave]; throw err; });
+      }
+      return promesas[clave];
+    })).then(() => protos);
   }
 
   const texCache = new Map();
@@ -146,9 +198,30 @@
     const clave = mat.uuid + '|' + claveVar;
     if (matCache.has(clave)) return matCache.get(clave);
     const m = mat.clone();
+    if (cambio.soloTinte && cambio.encalado) {
+      // Encalado de color: tiñe solo lo claro y poco saturado (la cal de las paredes), no tejas, madera ni rejas
+      const ti = cambio.tinte || [1, 1, 1];
+      const u = { uTinteCal: { value: new THREE.Color(ti[0], ti[1], ti[2]) } };
+      m.onBeforeCompile = sh => {
+        sh.uniforms.uTinteCal = u.uTinteCal;
+        sh.fragmentShader = 'uniform vec3 uTinteCal;\n' + sh.fragmentShader.replace('#include <map_fragment>', `#include <map_fragment>
+          {
+            vec3 cc = diffuseColor.rgb;
+            float l = dot(cc, vec3(0.299, 0.587, 0.114));
+            float sat = max(cc.r, max(cc.g, cc.b)) - min(cc.r, min(cc.g, cc.b));
+            float cal = smoothstep(0.22, 0.5, l) * (1.0 - smoothstep(0.06, 0.18, sat));
+            diffuseColor.rgb = mix(cc, cc * uTinteCal, cal);
+          }`);
+      };
+      m.customProgramCacheKey = () => 'encalado';
+      matCache.set(clave, m);
+      return m;
+    }
     if (cambio.soloTinte) {
       const ti = cambio.tinte || [1, 1, 1];
-      m.color.setRGB(ti[0], ti[1], ti[2]);
+      if (cambio.absoluto) m.color.setRGB(ti[0], ti[1], ti[2]);
+      else m.color.setRGB(Math.min(1, m.color.r * ti[0]), Math.min(1, m.color.g * ti[1]), Math.min(1, m.color.b * ti[2]));
+      if (m.map) m.color.setRGB(Math.min(2, ti[0]), Math.min(2, ti[1]), Math.min(2, ti[2])); // con foto: el tinte va sobre la foto
       matCache.set(clave, m);
       return m;
     }
@@ -206,7 +279,7 @@
         const b = barajas[papel];
         if (!b || !b.length) return;
         if (c.soloTinte) {
-          cambios[papel] = { soloTinte: true, tinte: b[(v - 1) % b.length] };
+          cambios[papel] = { soloTinte: true, encalado: !!c.encalado, absoluto: !!c.absoluto, tinte: b[(v - 1) % b.length] };
         } else {
           cambios[papel] = { grupo: c.grupo, id: b[(v - 1) % b.length], repetir: c.repetir, canal: c.canal, tinte: c.tinte };
         }
@@ -233,7 +306,7 @@
     grupo.name = 'CasasGLB';
     const modoVar = opts.casaVar || 'alta';
     const nVar = Math.max(1, opts.variantes || (modoVar === 'libre' ? 12 : 10));
-    const modelos = (opts.modelos || Object.keys(MODELOS)).filter(m => protos[m]);
+    const modelos = (opts.modelos || BASICOS).filter(m => protos[m]);
     if (!modelos.length) return { grupo, actualizar() {}, casas: [] };
     const dLejos = opts.distanciaLejos || 70;
     const lotes = [];   // { proto, mallasCerca, mallasLejos, casas: [{ matriz, x, z, lejos }] }
@@ -272,10 +345,11 @@
       }
       const m = new THREE.Matrix4().compose(new THREE.Vector3(c.x, c.y, c.z),
         new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), giro), new THREE.Vector3(sx, sy, sz));
-      const clave = modelo + '#' + variante;
+      const espejo = !!MODELOS[modelo].espejo && hash01(c.x * 1.9 + 7, c.z * 0.37 - 2) < 0.5;
+      const clave = modelo + '#' + variante + (espejo ? '#e' : '');
       if (!porLote.has(clave)) {
         const vars = variantes(modelo, nVar, opts.semilla || 1);
-        porLote.set(clave, { modelo, variante: vars[variante % vars.length], casas: [] });
+        porLote.set(clave, { modelo, espejo, variante: vars[variante % vars.length], casas: [] });
       }
       const info = { matriz: m, x: c.x, z: c.z, lejos: false, modelo, variante };
       porLote.get(clave).casas.push(info);
@@ -292,8 +366,9 @@
         grupo.add(im);
         return im;
       });
-      lote.cerca = crear(protos[lote.modelo].cerca, true);
-      lote.lejos = crear(protos[lote.modelo].lejos, false);
+      const pr = protos[lote.modelo];
+      lote.cerca = crear(lote.espejo ? pr.cercaEspejo : pr.cerca, true);
+      lote.lejos = crear(lote.espejo ? pr.lejosEspejo : pr.lejos, false);
       lotes.push(lote);
     });
 
@@ -358,7 +433,7 @@
     return grupo;
   }
 
-  const CasasGLBLib = { BASE, TEXTURAS, MODELOS, PIEZAS, cargar, construir, cargarPieza, construirPiezas, variantes, textura, hash01 };
+  const CasasGLBLib = { BASE, TEXTURAS, MODELOS, ANDALUZAS, BASICOS, PIEZAS, cargar, construir, cargarPieza, construirPiezas, variantes, textura, hash01 };
   if (typeof module !== 'undefined' && module.exports) module.exports = CasasGLBLib;
   if (root) root.CasasGLBLib = CasasGLBLib;
 })(typeof window !== 'undefined' ? window : globalThis);

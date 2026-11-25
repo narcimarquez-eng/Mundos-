@@ -223,10 +223,11 @@
   registrarTipo({ id: 'glb', nombre: 'Modelo GLB', icono: '🧊', grupo: 'modelos', props: { modelo: '', alturaObjetivo: 0, sombras: true },
     campos: [{ k: 'modelo', n: 'Modelo', t: 'glb' }, NUM('alturaObjetivo', 'Ajustar a altura (m, 0 = original)', 0, 500, 0.1), { k: 'sombras', n: 'Sombras', t: 'bool' }] });
 
-  const ESTILOS_PUEBLO = [['l2_fantasy', 'Fantasía (L2)'], ['european', 'Europeo'], ['fortified', 'Fortificado'], ['trade', 'Comercio'], ['dwarven', 'Enano'], ['elven', 'Élfico'], ['desert', 'Desierto'], ['nordic', 'Nórdico'], ['oriental', 'Oriental'], ['swamp', 'Pantano']];
+  const ESTILOS_PUEBLO = [['andaluz', 'Andaluz (casas encaladas)'], ['l2_fantasy', 'Fantasía (L2)'], ['european', 'Europeo'], ['fortified', 'Fortificado'], ['trade', 'Comercio'], ['dwarven', 'Enano'], ['elven', 'Élfico'], ['desert', 'Desierto'], ['nordic', 'Nórdico'], ['oriental', 'Oriental'], ['swamp', 'Pantano']];
   registrarTipo({ id: 'pueblo', nombre: 'Pueblo', icono: '🏘', grupo: 'rpg', forma: 'area', radioDefecto: 100,
     props: { radio: 100, nivel: 1, cfg: null, notas: '' },
     campos: [{ k: 'cfg.size', n: 'Tamaño (2 aldea – 5 ciudadela)', t: 'rango', min: 2, max: 5, paso: 1 }, { k: 'cfg.style', n: 'Estilo', t: 'sel', op: ESTILOS_PUEBLO },
+      { k: 'cfg.casas', n: 'Casas', t: 'sel', op: [['variada', 'Las del estilo'], ['andaluza', 'Andaluzas encaladas'], ['glb', 'Entramado y cabaña'], ['original', 'Piedra y tejado'], ['madera', 'Madera'], ['mixta', 'Piedra y madera']] },
       { k: 'cfg.seed', n: 'Semilla', t: 'num', min: 1, max: 99999, paso: 1 }, { k: 'cfg.hasWalls', n: 'Murallas', t: 'bool' }, { k: 'cfg.hasRiver', n: 'Río', t: 'bool' },
       NUM('nivel', 'Nivel', 1, 99, 1), { k: 'notas', n: 'Notas', t: 'texto' }],
     accion: 'pueblo' });
@@ -1070,7 +1071,7 @@
       // Pueblo de prueba dentro del circuito, con un camino de tierra hasta la pista que entra por su salida
       const m = esc.terreno.tam / 2;
       const cfgP = cfgPuebloPorDefecto(rng.int(1, 99999), 2);
-      Object.assign(cfgP, { style: 'european', hasWalls: true, hasRiver: false, relief: 0 });
+      Object.assign(cfgP, { style: 'andaluz', casas: 'andaluza', trazado: 'adosadas', hasWalls: false, hasRiver: false, hasMagic: false, specialCount: 2, relief: 0 }); // pueblo blanco andaluz
       const hP = mitadTerrenoPueblo(cfgP);
       const sitioP = buscarSitio(esc, rng, (x, z) => Math.hypot(x, z) < m * 0.35 && distanciaACamino(c, x, z, mu) > hP + 40, 800) || { x: 0, z: 0 };
       const pueblo = crearElemento(esc, 'pueblo', sitioP.x, sitioP.z, { nombre: 'Villarrally', nivel: 1, cfg: cfgP });

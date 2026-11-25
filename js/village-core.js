@@ -75,7 +75,8 @@
       elven: 't09',
       dwarven: 't08',
       fortified: 't04',
-      trade: 't03'
+      trade: 't03',
+      andaluz: 't07'   // encalado
     };
 
     // Catálogo de puentes GLB (glb/puente0.glb, puente1.glb, puente3.glb) + medidas exactas en eje local X
@@ -339,6 +340,14 @@
       { id: 't10', label: 'Losas con liquen (T-10)', path: 'assets/texturas/tejados/t10.jpg' }
     ];
     const STYLE_ROOF_VARIANTS = {
+      // Teja árabe de barro: distintos cocidos y alguna con musgo
+      andaluz: [
+        { tex: 't01', tint: '#ffffff' },
+        { tex: 't01', tint: '#fed7aa' },
+        { tex: 't09', tint: '#ffffff' },
+        { tex: 't04', tint: '#ffffff' },
+        { tex: 't01', tint: '#fdba74' }
+      ],
       l2_fantasy: [
         { tex: 't09', tint: '#3b82f6' },
         { tex: 't02', tint: '#60a5fa' },
@@ -406,7 +415,8 @@
       elven: { tex: 't02', tint: '#5eead4' },
       dwarven: { tex: 't02', tint: '#cbd5e1' },
       fortified: { tex: 't02', tint: '#94a3b8' },
-      trade: { tex: 't08', tint: '#f87171' }
+      trade: { tex: 't08', tint: '#f87171' },
+      andaluz: { tex: 't01', tint: '#ffffff' }
     };
 
     function base64ToArrayBuffer(base64) {
@@ -615,6 +625,30 @@
 
     // --- 2. CATÁLOGO DE ESTILOS ARQUITECTÓNICOS (LINEAGE 2) ---
     const ARCHITECTURAL_STYLES = {
+      // Pueblo blanco: cal, teja árabe, calles de albero y adoquín, olivos y naranjos. Sus casas son la familia
+      // «andaluza» de js/casas-glb.js (cfg.casas = 'andaluza', o por defecto en este estilo).
+      andaluz: {
+        name: 'Pueblo Andaluz',
+        roofHex: '#b45309',
+        roofAltHex: '#9a3412',
+        roofPattern: 'terracotta',
+        wallTints: [0xffffff, 0xfffbeb, 0xfefce8, 0xfff7ed],
+        stuccoHex: '#fafaf9',
+        stuccoTint: '#fef3c7',
+        stoneHex: '#d6d3d1',
+        stonePattern: 'fieldstone',
+        stonePalette: ['#e7e5e4', '#d6d3d1', '#f5f5f4', '#c8b89a'],
+        woodHex: '#5b3a1e',
+        roadHex: '#c8a96a',
+        curbHex: '#f5f5f4',
+        grass1: '#6b7f3a',
+        grass2: '#7d8c45',
+        treeColors: [0x5b7a3a, 0x6f8f4a, 0x4a6b2f, 0x8a9a5b],
+        magicHex: 0xf59e0b,
+        towerStyle: 'round',
+        palisade: false,
+        defaultWalls: false
+      },
       l2_fantasy: {
         name: 'Fantasía Lineage 2',
         roofHex: '#1d4ed8',
@@ -2445,7 +2479,8 @@
         const ficha = this._fichaGLB = {};
         const casaVar = (cfg && cfg.casaVar) || 'alta';
         const modoCasas = (cfg && cfg.casas) || 'variada';
-        const modelosUnicos = (modoCasas === 'casa_entramado' || modoCasas === 'cabana') ? [modoCasas] : undefined;
+        const andaluz = modoCasas === 'andaluza' || (cfg && cfg.style === 'andaluz' && (modoCasas === 'variada' || modoCasas === 'glb'));
+        const modelosUnicos = andaluz ? L.ANDALUZAS : (modoCasas === 'casa_entramado' || modoCasas === 'cabana') ? [modoCasas] : undefined;
         const adosadas = !!(cfg && cfg.trazado === 'adosadas');
         const casas = glbs.map(h => {
           // Apoyada en la esquina más baja del solar: en una ladera el lado alto queda enterrado, nunca en el aire
@@ -2457,7 +2492,7 @@
           });
           return { x: h.x, y: y - 0.05, z: h.z, rot: h.rot, modelo: h.modeloGLB, anchoSlot: h.anchoSlot };
         });
-        L.cargar(THREE).then(() => {
+        L.cargar(THREE, undefined, modelosUnicos || L.BASICOS).then(() => {
           if (this._fichaGLB !== ficha) return;
           const r = L.construir(THREE, casas, {
             ancho: HW * 1.35,
@@ -5120,12 +5155,20 @@
         const modoCasas = cfg.casas || 'variada';
         const casaVar = cfg.casaVar || 'alta';
         const conGLB = !!window.CasasGLBLib;
+        const andaluz = modoCasas === 'andaluza' || (cfg.style === 'andaluz' && (modoCasas === 'variada' || modoCasas === 'glb'));
         houses.forEach((h, idx) => {
           const r = hash01(h.x, h.z);
           const r2 = hash01(h.z * 1.3 + 5, h.x * 0.7 - 3);
           const esCentro = (h.distCentro || Math.hypot(h.x, h.z)) < townRadius * 0.58;
           const par = (h.slotIdx != null ? h.slotIdx : idx) % 2 === 0;
-          if (modoCasas === 'casa_entramado' || modoCasas === 'cabana') {
+          if (andaluz) {
+            // Pueblo andaluz: cerca de la plaza más casas de dos plantas; hacia las afueras, rústicas y de una planta
+            h.glb = conGLB;
+            h.madera = false;
+            const r3 = hash01(h.x * 0.61 + 13, h.z * 1.7 - 5);
+            const dosPlantas = esCentro ? 0.38 : 0.1, rustica = esCentro ? 0.12 : 0.36;
+            h.modeloGLB = r3 < dosPlantas ? 'casa_dos_plantas' : r3 < dosPlantas + rustica ? 'casa_rustica' : (r3 * 7 % 1 < 0.5 ? 'casa_andaluza_5v' : 'casa_andaluza_5v_b');
+          } else if (modoCasas === 'casa_entramado' || modoCasas === 'cabana') {
             h.glb = conGLB;
             h.madera = false;
             h.modeloGLB = modoCasas;

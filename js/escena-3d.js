@@ -444,7 +444,7 @@ registrarDibujo('enemigo', (el, ctx) => {
 
 // RPG: maqueta del pueblo (casas y muralla a partir de su configuración del Creador de Pueblos)
 const PALETAS_PUEBLO = {
-  l2_fantasy: ['#d9cdb4', '#8b3a2f'], european: ['#e8dcc6', '#9c4a30'], fortified: ['#b8ad9c', '#5d4a3a'], trade: ['#e6d2a8', '#a4532d'],
+  andaluz: ['#f5f2ea', '#b4532a'], l2_fantasy: ['#d9cdb4', '#8b3a2f'], european: ['#e8dcc6', '#9c4a30'], fortified: ['#b8ad9c', '#5d4a3a'], trade: ['#e6d2a8', '#a4532d'],
   dwarven: ['#8f8577', '#4b4038'], elven: ['#e9efe0', '#3f7a5a'], desert: ['#e3c99a', '#c9a46a'], nordic: ['#8a6a4a', '#3e4a52'], oriental: ['#e7dcc8', '#7a2a2a'], swamp: ['#7a6a52', '#4a5a3a']
 };
 registrarDibujo('pueblo', (el, ctx) => {
