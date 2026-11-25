@@ -47,7 +47,8 @@ const escena = new Escena3D({
   scene, renderer, editor: true, calidad: 'media',
   cargarModeloLocal: id => A.cargarModelo(id),
   alCargar: n => { pendientesCarga = n; const s = $('est-carga'); s.hidden = !n; s.textContent = '⏳ Cargando ' + n + ' modelo' + (n === 1 ? '' : 's'); },
-  alCambiar: () => { if (sel) marcarSeleccion(); }
+  alCambiar: () => { if (sel) marcarSeleccion(); },
+  alAviso: t => setTimeout(() => aviso(t), 0)
 });
 
 // Cursor del pincel (aro sobre el terreno)

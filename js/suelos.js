@@ -60,8 +60,10 @@ export function cargarSuelos(tam) {
     tex.format = THREE.RGBAFormat; tex.type = THREE.UnsignedByteType;
     tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
     tex.minFilter = THREE.LinearMipmapLinearFilter; tex.magFilter = THREE.LinearFilter;
-    tex.generateMipmaps = true; tex.anisotropy = 8;
-    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.generateMipmaps = true; tex.anisotropy = 4;
+    // Sin espacio de color sRGB en la textura (algunas gráficas de móvil no generan mipmaps de capas sRGB):
+    // los colores se pasan a lineal en el shader
+    tex.colorSpace = THREE.NoColorSpace;
     tex.needsUpdate = true;
     const cacheCelda = {};
     const atlasCelda = i => {
@@ -78,13 +80,17 @@ export function cargarSuelos(tam) {
 }
 
 // Trozo de GLSL común: muestra una capa dos veces a escalas distintas (rompe la repetición)
+// textureGrad con derivadas calculadas fuera de los bucles: dentro de un «if» las derivadas implícitas no están
+// definidas y algunas gráficas de móvil fallan.
 const GLSL_CAPA = /* glsl */`
   uniform highp sampler2DArray uCapas;
-  vec3 muestraCapa(float capa, vec2 uv) {
-    vec3 a = texture(uCapas, vec3(uv, capa)).rgb;
-    vec2 uv2 = mat2(0.8, -0.6, 0.6, 0.8) * uv * 0.37 + vec2(0.31, 0.17);
-    vec3 b = texture(uCapas, vec3(uv2, capa)).rgb;
-    return mix(a, b, 0.42);
+  vec3 aLineal(vec3 c) { return pow(c, vec3(2.2)); }
+  vec3 muestraCapa(float capa, vec2 uv, vec2 dx, vec2 dy) {
+    vec3 a = textureGrad(uCapas, vec3(uv, capa), dx, dy).rgb;
+    mat2 giro = mat2(0.8, -0.6, 0.6, 0.8);
+    vec2 uv2 = giro * uv * 0.37 + vec2(0.31, 0.17);
+    vec3 b = textureGrad(uCapas, vec3(uv2, capa), giro * dx * 0.37, giro * dy * 0.37).rgb;
+    return aLineal(mix(a, b, 0.42));
   }
   float ruidoSuelo(vec2 p) {
     vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
@@ -135,12 +141,13 @@ export function materialTerreno(suelos, mezcla, esc) {
         vec4 w0 = texture(uMezcla, vec3(su, 0.0)), w1 = texture(uMezcla, vec3(su, 1.0)), w2 = texture(uMezcla, vec3(su, 2.0)), w3 = texture(uMezcla, vec3(su, 3.0));
         float pesos[16] = float[16](w0.r, w0.g, w0.b, w0.a, w1.r, w1.g, w1.b, w1.a, w2.r, w2.g, w2.b, w2.a, w3.r, w3.g, w3.b, w3.a);
         vec2 tuv = q / uEscala;
+        vec2 tdx = dFdx(tuv), tdy = dFdy(tuv);
         vec3 acc = vec3(0.0); float tot = 0.0;
-        for (int i = 0; i < 16; i++) { float w = pesos[i]; if (w > 0.01) { w = w * w; acc += muestraCapa(float(i), tuv) * w; tot += w; } }
+        for (int i = 0; i < 16; i++) { float w = pesos[i]; if (w > 0.01) { w = w * w; acc += muestraCapa(float(i), tuv, tdx, tdy) * w; tot += w; } }
         diffuseColor.rgb *= tot > 0.0 ? acc / tot : vec3(0.5);
       }`);
   };
-  m.customProgramCacheKey = () => 'terreno-capas';
+  m.customProgramCacheKey = () => 'terreno-capas-2';
   return m;
 }
 
@@ -162,13 +169,14 @@ export function materialCamino(suelos) {
         {
           float pw[8] = float[8](vPa.x, vPa.y, vPa.z, vPa.w, vPb.x, vPb.y, vPb.z, vPb.w);
           vec3 acc = vec3(0.0); float tot = 0.0;
-          for (int i = 0; i < 8; i++) { if (pw[i] > 0.01) { acc += muestraCapa(uCapaTipo[i], vUvCam) * pw[i]; tot += pw[i]; } }
+          vec2 cdx = dFdx(vUvCam), cdy = dFdy(vUvCam);
+          for (int i = 0; i < 8; i++) { if (pw[i] > 0.01) { acc += muestraCapa(uCapaTipo[i], vUvCam, cdx, cdy) * pw[i]; tot += pw[i]; } }
           diffuseColor.rgb *= tot > 0.0 ? acc / tot : vec3(0.5);
           diffuseColor.a *= vExtra.z;
         }`)
       .replace('#include <color_fragment>', '#include <color_fragment>\n diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.86), clamp(vExtra.y, 0.0, 1.0));');
   };
-  m.customProgramCacheKey = () => 'camino-capas';
+  m.customProgramCacheKey = () => 'camino-capas-2';
   return m;
 }
 export const escalaCamino = tipo => (CAPA_CAMINO[tipo] || CAPA_CAMINO.tierra)[1];

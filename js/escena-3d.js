@@ -649,13 +649,32 @@ export class Escena3D {
     this.raiz.add(this.vegetacion.grupo);
     this.pradera = new Pradera({ renderer: this.renderer, calidad: this.o.calidad });
     this.raiz.add(this.pradera.grupo);
-    // Texturas reales del suelo y de los caminos: mientras cargan se ven los colores planos
-    cargarSuelos(this.o.calidad === 'baja' ? 256 : 512).then(s => {
+    // Texturas reales del suelo y de los caminos: mientras cargan se ven los colores planos. Si la gráfica no puede
+    // con su shader, se vuelve a los colores planos y se avisa (con el error, para poder arreglarlo).
+    const r0 = this.renderer;
+    const antes = r0.debug.onShaderError;
+    r0.debug.onShaderError = (gl, prog, vs, fs) => {
+      const log = (gl.getProgramInfoLog(prog) || '') + ' ' + (gl.getShaderInfoLog(fs) || '') + ' ' + (gl.getShaderInfoLog(vs) || '');
+      console.error('Error de shader:', log);
+      const src = gl.getShaderSource(fs) || '';
+      if (/muestraCapa/.test(src) && this.suelos) this.desactivarSuelos('La gráfica de este dispositivo no admite las texturas del suelo; se usan colores planos. (' + log.trim().slice(0, 160) + ')');
+      else if (typeof antes === 'function') antes(gl, prog, vs, fs);
+    };
+    const tactil = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
+    if (this.o.texturasSuelo !== false) cargarSuelos(this.o.calidad === 'baja' || tactil ? 256 : 512).then(s => {
+      if (this._sinSuelos) return;
       this.suelos = s;
       if (this.esc) { this.construirTerreno(); this.construirCaminos(); }
-    }).catch(() => {});
+    }).catch(e => this.o.alAviso && this.o.alAviso('No se pudieron cargar las texturas del suelo: ' + e.message));
     this._crearAmbiente();
     this.texSuelo = texturaRuido(256, 200, 55, 11);
+  }
+
+  desactivarSuelos(motivo) {
+    if (this._sinSuelos) return;
+    this._sinSuelos = true; this.suelos = null; this._matCamino = null;
+    setTimeout(() => { if (this.esc) { this.construirTerreno(); this.construirCaminos(); } }, 0);
+    if (motivo && this.o.alAviso) this.o.alAviso(motivo);
   }
 
   // --- Cielo, sol y niebla ---
