@@ -11,6 +11,7 @@ import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
 import { Vegetacion } from './vegetacion.js';
 import { Pradera } from './pradera.js';
 import { cargarGeneradorPueblos, construirPueblo, reservasDePueblo } from './pueblos3d.js';
+import { geoRocaForma, materialRoca, piedrasDe, tinteRoca, formaAzar } from './rocas.js';
 import { materialAgua, ponerHondura, EntornoAgua } from './agua.js';
 import { cargarSuelos, crearMezcla, actualizarMezcla, materialTerreno, materialCamino, escalaCamino, uvEnMetros } from './suelos.js';
 
@@ -232,8 +233,11 @@ registrarDibujo('arbol', (el, ctx) => {
   return g;
 });
 registrarDibujo('roca', (el, ctx) => {
-  const m = malla(geoRoca(E.hashTexto(el.id)), new THREE.MeshStandardMaterial({ vertexColors: true, color: el.props.color, roughness: 0.95, flatShading: true }));
-  m.scale.setScalar(el.props.tam); m.rotation.y = (E.hashTexto(el.id) % 360) * DEG; void ctx; return m;
+  const h = E.hashTexto(el.id), p = el.props;
+  const forma = !p.forma || p.forma === 'variada' ? formaAzar((h % 1000) / 1000) : p.forma;
+  const ps = piedrasDe(p.piedra, h), mat = materialRoca(ps[h % ps.length], 0, tinteRoca(p.color));
+  const m = malla(geoRocaForma(forma, h % 3), mat);
+  m.scale.setScalar(p.tam); m.rotation.y = (h % 360) * DEG; void ctx; return m;
 });
 
 // Dispersión en un área (bosque, pedregal) con InstancedMesh; la altura sigue al terreno.
@@ -284,29 +288,46 @@ registrarDibujo('bosque', (el, ctx) => {
       im.castShadow = true; im.receiveShadow = true; im.computeBoundingSphere();
       g.add(im);
     }
-    if (rocas.length) g.add(instanciasRocas(rocas, el, ctx, 0.5, 2.2, '#7d7a74'));
+    if (rocas.length) g.add(instanciasRocas(rocas, el, ctx, 0.5, 2.2, '#7d7a74', { piedra: 'mezcla', semilla: (p.semilla || 1) + 3 }));
     if (conModelo.length) { ctx.vegetacion.registrar(el.id, conModelo); g.userData.alQuitar = () => ctx.vegetacion.quitar(el.id); }
     g.userData.sinEscala = true;
     return g;
   });
 });
-function instanciasRocas(pts, el, ctx, tMin, tMax, color) {
+// Rocas instanciadas: se agrupan por forma (canto, losa, bloque…, dos variantes de cada) y por foto de piedra.
+// opts: { forma: 'variada' | 'canto' | …, piedra: 'mezcla' | 'granito' | …, semilla }
+function instanciasRocas(pts, el, ctx, tMin, tMax, color, opts) {
+  opts = opts || {};
   const g = new THREE.Group();
-  const m4 = new THREE.Matrix4(), q4 = new THREE.Quaternion(), s3 = new THREE.Vector3(), p3 = new THREE.Vector3(), eje = new THREE.Vector3(0, 1, 0);
-  const por = [[], [], [], []];
-  pts.forEach(q => por[Math.floor(q.v * 4) % 4].push(q));
-  por.forEach((lista, v) => {
-    if (!lista.length) return;
-    const im = new THREE.InstancedMesh(geoRoca(v), new THREE.MeshStandardMaterial({ vertexColors: true, color, roughness: 0.95, flatShading: true }), lista.length);
-    lista.forEach((q, k) => { const t = tMin + (tMax - tMin) * q.s * q.s; p3.set(q.x - el.x, q.y - ctx.baseY, q.z - el.z); q4.setFromAxisAngle(eje, q.rot); s3.setScalar(t); im.setMatrixAt(k, m4.compose(p3, q4, s3)); });
+  const m4 = new THREE.Matrix4(), q4 = new THREE.Quaternion(), s3 = new THREE.Vector3(), p3 = new THREE.Vector3(), eu = new THREE.Euler(), col = new THREE.Color();
+  const piedras = piedrasDe(opts.piedra, opts.semilla != null ? opts.semilla : (el.props.semilla || 1));
+  const tinte = tinteRoca(color);
+  const grupos = new Map();
+  pts.forEach(q => {
+    const t = (q.v * 7.13) % 1, forma = !opts.forma || opts.forma === 'variada' ? formaAzar(t) : opts.forma;
+    const variante = Math.floor(q.v * 977) % 2, piedra = piedras[Math.floor(q.v * 313) % piedras.length];
+    const k = forma + variante + piedra;
+    if (!grupos.has(k)) grupos.set(k, { forma, variante, piedra, lista: [] });
+    grupos.get(k).lista.push(q);
+  });
+  for (const gr of grupos.values()) {
+    const im = new THREE.InstancedMesh(geoRocaForma(gr.forma, gr.variante), materialRoca(gr.piedra), gr.lista.length);
+    gr.lista.forEach((q, k) => {
+      const t = tMin + (tMax - tMin) * q.s * q.s;
+      const incl = gr.forma === 'aguja' ? 0.12 : 0.18; // algo ladeadas, no todas rectas
+      eu.set((q.v - 0.5) * incl, q.rot, (((q.v * 13.7) % 1) - 0.5) * incl);
+      p3.set(q.x - el.x, q.y - ctx.baseY, q.z - el.z); q4.setFromEuler(eu); s3.setScalar(t);
+      im.setMatrixAt(k, m4.compose(p3, q4, s3));
+      col.copy(tinte).multiplyScalar(0.82 + ((q.v * 31.1) % 1) * 0.3); im.setColorAt(k, col);
+    });
     im.castShadow = true; im.receiveShadow = true; im.computeBoundingSphere();
     g.add(im);
-  });
+  }
   return g;
 }
 registrarDibujo('rocas', (el, ctx) => {
   const p = el.props;
-  const g = dispersar(el, ctx, Math.min(2000, p.cantidad | 0), pts => instanciasRocas(pts, el, ctx, p.tamMin, p.tamMax, p.color));
+  const g = dispersar(el, ctx, Math.min(2000, p.cantidad | 0), pts => instanciasRocas(pts, el, ctx, p.tamMin, p.tamMax, p.color, { forma: p.forma, piedra: p.piedra, semilla: p.semilla }));
   g.userData.sinEscala = true; return g;
 });
 registrarDibujo('lago', (el, ctx) => {

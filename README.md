@@ -39,6 +39,8 @@ El escenario de ejemplo (el circuito de rally) **atraviesa un pueblo andaluz**: 
 5. **▶ Visor** abre el escenario.
 
 ### Árboles con modelo 3D
+Las **rocas** (sueltas, en pedregales y entre los árboles de los bosques) llevan **fotos de roca real** (`assets/rocas/`, sacadas del atlas del terreno: ambientCG, CC0) proyectadas desde los tres ejes, sin costuras, con su relieve. Las formas se hacen por código y varían: **canto rodado, losa, bloque fracturado, aguja y roca partida**. En cada roca o pedregal se elige la forma («Variadas» las mezcla) y la piedra: granito con líquenes, caliza gris, con musgo, en estratos, arenisca ocre o pizarra oscura («Mezcla» combina dos parecidas). El color tiñe la foto; el gris de siempre la deja tal cual. Ninguna librería traía modelos de piedra, por eso las formas son generadas (`js/rocas.js`).
+
 Los árboles y bosques usan modelos `.glb` reales: **liquidámbar**, **pinsapo**, **pino piñonero** y **palmera datilera** (`glb/arboles/`). «Mezcla según el bioma» los combina solos (templado: liquidámbar, pinsapo y pino; tropical: palmera…), y siguen existiendo las especies sencillas dibujadas por código.
 
 Todos los árboles de todos los bosques se dibujan por instancias, con tres niveles de detalle:

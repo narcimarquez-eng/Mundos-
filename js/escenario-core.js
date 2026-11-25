@@ -180,16 +180,20 @@
     .concat([['roble', 'Roble sencillo'], ['pino', 'Pino sencillo'], ['abeto', 'Abeto sencillo'], ['palmera', 'Palmera sencilla'], ['abedul', 'Abedul sencillo'], ['seco', 'Árbol seco'], ['cactus', 'Cactus'], ['mixto', 'Mezcla según el bioma']]);
   registrarTipo({ id: 'arbol', nombre: 'Árbol', icono: '🌳', grupo: 'naturaleza', props: { especie: 'liquidambar', alto: 0 },
     campos: [{ k: 'especie', n: 'Especie', t: 'sel', op: ESPECIES.filter(e => e[0] !== 'mixto') }, NUM('alto', 'Altura (m, 0 = la del modelo)', 0, 60)] });
-  registrarTipo({ id: 'roca', nombre: 'Roca', icono: '🪨', grupo: 'naturaleza', props: { tam: 3, color: '#7d7a74' },
-    campos: [NUM('tam', 'Tamaño', 0.2, 100), COLOR('color')] });
+  // Rocas: forma (js/rocas.js la hace por código) y foto de piedra (assets/rocas/). El color tiñe la foto (el gris la deja igual).
+  const FORMAS_ROCA = [['variada', 'Variadas'], ['canto', 'Canto rodado'], ['losa', 'Losa'], ['bloque', 'Bloque fracturado'], ['aguja', 'Aguja'], ['partida', 'Roca partida']];
+  const PIEDRAS = [['mezcla', 'Mezcla'], ['granito', 'Granito con líquenes'], ['gris', 'Caliza gris'], ['musgo', 'Con musgo'], ['estratos', 'En estratos'], ['ocre', 'Arenisca ocre'], ['oscura', 'Pizarra oscura']];
+  registrarTipo({ id: 'roca', nombre: 'Roca', icono: '🪨', grupo: 'naturaleza', props: { tam: 3, color: '#7d7a74', forma: 'variada', piedra: 'mezcla' },
+    campos: [NUM('tam', 'Tamaño', 0.2, 100), { k: 'forma', n: 'Forma', t: 'sel', op: FORMAS_ROCA }, { k: 'piedra', n: 'Piedra', t: 'sel', op: PIEDRAS }, COLOR('color', 'Tinte')] });
   registrarTipo({ id: 'bosque', nombre: 'Bosque (área)', icono: '🌲', grupo: 'naturaleza', forma: 'area', radioDefecto: 40,
     props: { radio: 40, especie: 'mixto', densidad: 6, tamano: 1, altoMin: 6, altoMax: 13, rocas: 0.15, semilla: 1 },
     campos: [NUM('radio', 'Radio', 5, 2000, 1), { k: 'especie', n: 'Especie', t: 'sel', op: ESPECIES }, NUM('densidad', 'Árboles cada 1000 m²', 0.2, 40, 0.2),
       NUM('tamano', 'Tamaño de los árboles con modelo (×)', 0.3, 3, 0.05),
       NUM('altoMin', 'Altura mínima (sencillos)', 1, 60), NUM('altoMax', 'Altura máxima (sencillos)', 1, 60), NUM('rocas', 'Rocas (proporción)', 0, 1, 0.05), NUM('semilla', 'Semilla', 1, 99999, 1)] });
   registrarTipo({ id: 'rocas', nombre: 'Pedregal (área)', icono: '⛰', grupo: 'naturaleza', forma: 'area', radioDefecto: 25,
-    props: { radio: 25, cantidad: 30, tamMin: 0.6, tamMax: 4, color: '#7d7a74', semilla: 1 },
-    campos: [NUM('radio', 'Radio', 2, 1000, 1), NUM('cantidad', 'Cantidad', 1, 600, 1), NUM('tamMin', 'Tamaño mínimo', 0.1, 50, 0.1), NUM('tamMax', 'Tamaño máximo', 0.1, 80, 0.1), COLOR('color'), NUM('semilla', 'Semilla', 1, 99999, 1)] });
+    props: { radio: 25, cantidad: 30, tamMin: 0.6, tamMax: 4, color: '#7d7a74', forma: 'variada', piedra: 'mezcla', semilla: 1 },
+    campos: [NUM('radio', 'Radio', 2, 1000, 1), NUM('cantidad', 'Cantidad', 1, 600, 1), NUM('tamMin', 'Tamaño mínimo', 0.1, 50, 0.1), NUM('tamMax', 'Tamaño máximo', 0.1, 80, 0.1),
+      { k: 'forma', n: 'Formas', t: 'sel', op: FORMAS_ROCA }, { k: 'piedra', n: 'Piedra', t: 'sel', op: PIEDRAS }, COLOR('color', 'Tinte'), NUM('semilla', 'Semilla', 1, 99999, 1)] });
   registrarTipo({ id: 'lago', nombre: 'Lago (área)', icono: '💧', grupo: 'naturaleza', forma: 'area', radioDefecto: 30,
     props: { radio: 30, nivel: 0, color: '#2f6f8f', excavar: true, forma: 1 },
     campos: [NUM('radio', 'Radio', 3, 2000, 1), NUM('nivel', 'Altura del agua (sobre el suelo del centro)', -20, 20, 0.1), COLOR('color', 'Color del agua'),
