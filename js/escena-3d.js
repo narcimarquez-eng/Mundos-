@@ -10,6 +10,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
 import { Vegetacion } from './vegetacion.js';
 import { Pradera } from './pradera.js';
+import { cargarGeneradorPueblos, construirPueblo } from './pueblos3d.js';
 import { cargarSuelos, crearMezcla, actualizarMezcla, materialTerreno, materialCamino, escalaCamino, uvEnMetros } from './suelos.js';
 
 const E = window.Escenario;
@@ -428,7 +429,7 @@ registrarDibujo('pueblo', (el, ctx) => {
   const suelo = new THREE.CircleGeometry(R * 0.2, 40).rotateX(-Math.PI / 2);
   const ps = suelo.attributes.position;
   for (let k = 0; k < ps.count; k++) ps.setY(k, yLocal(ps.getX(k), ps.getZ(k)) + 0.08);
-  g.add(malla(pintarGeo(suelo, '#b3a48e', 0.05), MAT_VC_SUAVE, false));
+  const mSuelo = malla(pintarGeo(suelo, '#b3a48e', 0.05), MAT_VC_SUAVE, false); mSuelo.userData.maqueta = true; g.add(mSuelo);
   const geos = [];
   const rot = (cfg.rotation || 0) * DEG;
   for (let s = 0; s < 4; s++) {
@@ -471,7 +472,7 @@ registrarDibujo('pueblo', (el, ctx) => {
       if (k % 6 === 0) { const t = new THREE.CylinderGeometry(2.4, 2.6, 11, 8); t.translate(x0, yLocal(x0, z0) + 4, z0); geos.push(pintarGeo(t, '#7f776b', 0.08, k + 99)); }
     }
   }
-  if (geos.length) g.add(malla(unir(geos), MAT_VC));
+  if (geos.length) { const mq = malla(unir(geos), MAT_VC); mq.userData.maqueta = true; g.add(mq); }
   if (ctx.editor || ctx.etiquetas) { const et = crearEtiqueta('🏘 ' + el.nombre + ' · Nv ' + (el.props.nivel || 1), { alto: Math.max(4, R * 0.06) }); et.position.y = yLocal(0, 0) + 22; g.add(et); }
   return g;
 });
@@ -881,8 +882,33 @@ export class Escena3D {
       this.gBarreras.add(im);
     }
   }
+  _mallaRio(c) {
+    const esc = this.esc, mu = E.muestrearCamino(c, 1.5), g = new THREE.BufferGeometry();
+    if (mu.length >= 2) {
+      const niv = E.nivelesRio(esc, c, mu), cruz = [-0.55, -0.3, 0, 0.3, 0.55], W = cruz.length;
+      const pos = [], uv = [], idx = [];
+      for (let k = 0; k < mu.length; k++) {
+        const a = mu[Math.max(0, k - 1)], b = mu[Math.min(mu.length - 1, k + 1)];
+        let dx = b.x - a.x, dz = b.z - a.z; const l = Math.hypot(dx, dz) || 1; dx /= l; dz /= l;
+        for (const u of cruz) { pos.push(mu[k].x - dz * u * c.ancho, niv[k], mu[k].z + dx * u * c.ancho); uv.push((u + 0.5) * c.ancho / 5, mu[k].d / 5); }
+        if (k > 0) for (let q = 0; q < W - 1; q++) { const a0 = (k - 1) * W + q, a1 = a0 + 1, b0 = k * W + q, b1 = b0 + 1; idx.push(a0, a1, b0, a1, b1, b0); }
+      }
+      g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+      g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+      g.setIndex(idx); g.computeVertexNormals();
+    }
+    if (!this._matAgua) {
+      const n = new THREE.TextureLoader().load('assets/agua/waternormals.jpg');
+      n.wrapS = n.wrapT = THREE.RepeatWrapping;
+      this._matAgua = new THREE.MeshStandardMaterial({ color: '#3f7f93', roughness: 0.08, metalness: 0.1, transparent: true, opacity: 0.8, normalMap: n, normalScale: new THREE.Vector2(0.6, 0.6) });
+    }
+    const m = new THREE.Mesh(g, this._matAgua);
+    m.receiveShadow = true; m.userData.caminoId = c.id; m.renderOrder = 2;
+    return m;
+  }
   _mallaCamino(c) {
     const esc = this.esc;
+    if (E.esRio(c)) return this._mallaRio(c);
     const mu = E.muestrearCamino(c, 1.5);
     const g = new THREE.BufferGeometry();
     if (mu.length < 2) { const m = new THREE.Mesh(g); m.userData.caminoId = c.id; return m; }
@@ -1000,7 +1026,51 @@ export class Escena3D {
     g.scale.setScalar(area ? 1 : (el.escala || 1));
     g.traverse(o => { if (o.userData.alColocar) o.userData.alColocar(); });
   }
+  // Pueblos completos: se construyen al acercarse la cámara (a menos de 900 m) y se quitan al alejarse (1200 m);
+  // mientras tanto se ve la maqueta. Uno por vuelta, para no congelar la imagen.
+  _pueblosCerca(camara, dt) {
+    this._tPueblos = (this._tPueblos || 0) + dt;
+    if (this._tPueblos < 0.4 || !this.esc) return;
+    this._tPueblos = 0;
+    this.pueblosVivos = this.pueblosVivos || new Map();
+    const activos = this.o.pueblosReales !== false;
+    const cp = camara.position;
+    let construido = false;
+    for (const el of this.esc.elementos) {
+      if (el.tipo !== 'pueblo' || !el.props.cfg) continue;
+      const d = Math.hypot(cp.x - el.x, cp.y - E.alturaEn(this.esc, el.x, el.z), cp.z - el.z);
+      const vivo = this.pueblosVivos.get(el.id);
+      if (vivo && (!activos || d > 1200)) { this._quitarPueblo(el.id); continue; }
+      if (vivo || !activos || d > 900 || construido) continue;
+      if (!window.VillageLib) {
+        if (!this._cargandoPueblos) {
+          this._cargandoPueblos = true;
+          cargarGeneradorPueblos().catch(e => { console.warn(e); this.o.alAviso && this.o.alAviso('No se pudo cargar el generador de pueblos: ' + e.message); this.o.pueblosReales = false; })
+            .finally(() => { this._cargandoPueblos = false; });
+        }
+        return;
+      }
+      const g = this.objetos.get(el.id);
+      if (!g) continue;
+      try {
+        const p = construirPueblo(window.VillageLib, el, g, (x, z) => E.alturaEn(this.esc, x, z), THREE);
+        this.pueblosVivos.set(el.id, p);
+        g.traverse(o => { if (o.userData.maqueta) o.visible = false; });
+      } catch (e) { console.warn('Pueblo', el.nombre, e); this.pueblosVivos.set(el.id, { destroy() {} }); }
+      construido = true;
+      if (this.o.alCambiar) this.o.alCambiar();
+    }
+  }
+  _quitarPueblo(id) {
+    const p = this.pueblosVivos && this.pueblosVivos.get(id);
+    if (!p) return;
+    p.destroy(); this.pueblosVivos.delete(id);
+    const g = this.objetos.get(id);
+    if (g) g.traverse(o => { if (o.userData.maqueta) o.visible = true; });
+  }
+  setPueblosReales(v) { this.o.pueblosReales = v; if (!v && this.pueblosVivos) for (const id of Array.from(this.pueblosVivos.keys())) this._quitarPueblo(id); }
   quitarElemento(id) {
+    this._quitarPueblo(id);
     const g = this.objetos.get(id);
     if (!g) return;
     this.gElementos.remove(g);
@@ -1058,7 +1128,8 @@ export class Escena3D {
   }
   actualizar(dt, camara) {
     this.reloj += dt;
-    if (camara) { this.vegetacion.actualizar(camara, dt); this.pradera.actualizar(camara, dt); }
+    if (camara) { this.vegetacion.actualizar(camara, dt); this.pradera.actualizar(camara, dt); this._pueblosCerca(camara, dt); }
+    if (this._matAgua && this._matAgua.normalMap) this._matAgua.normalMap.offset.y -= dt * 0.18; // el agua baja
     if (this.cielo.material.uniforms.time) this.cielo.material.uniforms.time.value = this.reloj;
     for (const m of this.mezcladores) m.update(dt);
     this.gElementos.traverse(o => { if (o.userData.girar) o.rotation.y += dt * 2; });

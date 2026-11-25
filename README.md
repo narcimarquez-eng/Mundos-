@@ -22,6 +22,8 @@ Viene de la parte de edición del [Creador de Mundos RPG](https://github.com/nar
 
 Abre `index.html` servido por web (GitHub Pages o `npx serve .`); usa módulos y three.js desde jsDelivr, así que no basta con abrirlo como archivo.
 
+El escenario de ejemplo (el circuito de rally) trae un **pueblo de prueba** con su camino de acceso, un **riachuelo** que cruza la pista por dos vados, hierba, bosques y barreras.
+
 1. **✨ Nuevo** → elige una plantilla: Lienzo vacío, Mundo RPG, Circuito de rally, Plataformas, Archipiélago, Cordillera, Desierto o Volcán. Tamaño de 256 m a 8 km y tres niveles de detalle del terreno.
 2. **Herramientas** (barra izquierda, teclas `1`–`6`):
    - 👆 **Ver**: gira (arrastrar), desplaza (botón derecho) y acerca (rueda). Toca un elemento para seleccionarlo y moverlo, girarlo o escalarlo con las flechas (`G` `R` `S`). `F` enfoca, `Ctrl+D` duplica, `Supr` borra.
@@ -57,6 +59,17 @@ Los que quedan fuera de la vista no se dibujan. Las copas se mueven con el vient
 - Mientras cargan las texturas se ven los colores planos de antes.
 - Licencias: `docs/ASSETS-CREADOR-RPG.md` (copiado del Creador RPG).
 
+### Riachuelos
+En 🛣 Caminos, tipo **Riachuelo (agua)**: el agua corre del primer punto al último y nunca sube. «⛏ Excavar cauce» hunde el terreno a lo largo del río; donde atraviesa una loma corta más hondo pero con laderas anchas, como un valle. Donde cruza un camino queda un **vado** con el agua por encima. El agua usa la textura de agua del Creador de Pueblos y se mueve río abajo. No crece hierba ni árboles en el cauce. Para el juego, `Escenario.caminoEn` devuelve `riachuelo` y `Escenario.nivelesRio` la altura del agua.
+
+### Pueblos completos en el escenario
+Los pueblos se ven **completos** (casas, calles, plaza, murallas, farolas, árboles…, con el mismo generador que el Creador de Pueblos) cuando la cámara está a menos de 900 m; más lejos, la maqueta. El pueblo sigue el terreno del escenario (`terrainBase` del generador). Se puede desactivar en *Escenario → Vista* (editor) y en ⚙ Ajustes (visor). El río interno del pueblo (`hasRiver`) no se dibuja dentro del escenario: para agua, usa un riachuelo.
+
+**Calzadas y salidas:** cada salida del pueblo es una calle recta desde la plaza hasta el borde de su terreno. En el panel del pueblo:
+- «🔗 Crear salidas» pone una salida donde llega cada camino y lleva el camino hasta ella (quita los puntos que quedaban dentro).
+- «↪ Llevar caminos a las salidas» mantiene las salidas y lleva cada camino a la más cercana.
+- En el Creador de Pueblos, abierto desde el escenario, el campo **Salidas hacia el mundo** se puede cambiar (0° este, 90° sur, 180° oeste, 270° norte): al «Guardar y volver», los caminos se llevan solos a las nuevas salidas. Dentro del pueblo, las calles se dibujan a mano con la paleta de edición del creador.
+
 ### Creador de Pueblos incluido
 `creador-de-pueblos.html` y lo que necesita (`js/village-core.js`, `casas-glb.js`, `casa-madera.js`, `arboles.js`, `pueblo-edits.js`, `character.js`, `three-puente.js`, `puestos-datos.js`, `texturas-lib.js`, `glb/pueblo/`, los puentes de `glb/`, `assets/` y `enemigos-editor/`) son una copia de [Creador-de-mundos-Rpg](https://github.com/narcimarquez-eng/Creador-de-mundos-Rpg). «🏗 Abrir en el Creador de Pueblos» abre esta copia, así que la vuelta con el diseño funciona siempre, publiques donde publiques. Si cambia allí, hay que volver a copiar esos archivos.
 
@@ -65,7 +78,7 @@ El suelo se cubre de matas de hierba, trigo, flores, hierba alta o bambú, dibuj
 - **Automática:** sobre los suelos de hierba, hierba seca y musgo crece hierba sola, con claros, praderas de flores y matorral alto. Su densidad se cambia en *🖌 Pintar → Hierba y flores* («Hierba automática en todo el escenario»; 0 la quita).
 - **Pintada:** con el mismo pincel se pinta hierba, trigo, flores, hierba alta o bambú con su densidad, se vuelve a «Automático» o se pone «Sin vegetación». Mientras se pinta, el terreno se tiñe con lo que crece encima.
 - No crece en caminos, lagos, agua, pendientes fuertes ni en la plaza de los pueblos.
-- Se dibuja solo alrededor de la cámara (calidad media: matas detalladas hasta 28 m y sencillas hasta 75 m), en teselas de 16 m que se calculan una vez. Desde muy arriba no se dibuja. En el visor se puede desactivar en ⚙ Ajustes.
+- Se dibuja solo alrededor de la cámara (calidad media: matas detalladas hasta 45 m y sencillas hasta 140 m; baja 26/85 m; alta 65/210 m), en teselas de 16 m que se calculan una vez. Desde muy arriba no se dibuja. En el visor se puede desactivar en ⚙ Ajustes.
 
 ### Modelos GLB
 **➕ Colocar → Modelo GLB → Elegir modelo**:

@@ -50,6 +50,8 @@ Además, opcionales (los archivos de antes se cargan con listas vacías):
 - `tramos: [{ desde, hasta, tipo }]`: superficie distinta entre dos distancias (m desde el inicio). Si se solapan, manda el último. En un circuito (`cerrado`) un tramo con `hasta < desde` pasa por la salida.
 - `barreras: [{ tipo, lado, desde, hasta, separacion }]`: `tipo` = `cinta`, `valla_madera`, `guardarrail`, `neumaticos`, `muro`, `balas_paja`, `conos` o `valla_publi`; `lado` = `ambos`, `izq` o `der` (izquierda según el sentido del camino); `separacion` = metros desde el borde del camino.
 
+Con `tipo: "riachuelo"` el camino es agua: corre del primer punto al último, `profundidad` (opcional, m) es la hondura del cauce (por defecto 22 % del ancho, entre 0,5 y 2 m).
+
 Los puntos son de control: la línea real es una curva Catmull-Rom que pasa por ellos (`Escenario.muestrearCamino(c, paso)` → `[{ x, z, d }]`, `d` = metros desde el inicio). `cerrado` une el último con el primero (circuito). `tipo`: `tierra`, `grava`, `asfalto`, `piedra`, `arena`, `barro`, `nieve`. `bordes`: líneas blancas a los lados.
 
 ## Elemento
@@ -83,7 +85,7 @@ Los puntos son de control: la línea real es una curva Catmull-Rom que pasa por 
 | `camara` | punto | `altura, inclinacion`. Punto de vista para el visor (dirección = `rotY`). |
 | `glb` | punto | `modelo`, `alturaObjetivo` (0 = tamaño original), `sombras` |
 | `enemigo` | punto | `modelo, alturaObjetivo, nivel` |
-| `pueblo` | área | `radio, nivel, notas, cfg` — `cfg` es **la configuración del Creador de Pueblos** (la misma que `town.cfg` del Creador de Mundos: `style, terrainType, seed, size, houseDensity, …, rotation, exits, edits`). |
+| `pueblo` | área | `radio, nivel, notas, cfg` — `cfg` es **la configuración del Creador de Pueblos** (la misma que `town.cfg` del Creador de Mundos: `style, terrainType, seed, size, houseDensity, …, rotation, exits, edits`). `cfg.exits[].angle` son las salidas (grados locales, `atan2(z, x)`); `Escenario.puntoSalidaPueblo(el, angulo)` da el punto del borde donde enlaza el camino. |
 | `zona` | área | `radio, subtipo` (caza, elite, jefe, pvp, segura, arena), `nivelMin, nivelMax, semilla, enemigos: [{ modelo, cantidad, alto }]` |
 | `mazmorra` | punto | `nivel, dungeon` — `dungeon` es la configuración del Creador de Mazmorras. |
 

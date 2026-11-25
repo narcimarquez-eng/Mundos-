@@ -788,11 +788,17 @@
       document.getElementById('world-bar').classList.add('show');
       document.getElementById('world-town-name').textContent = '🌍 ' + (worldLink.name || 'Pueblo');
       document.title = (worldLink.name || 'Pueblo') + ' · Creador de Pueblos';
-      // Las salidas las deciden los caminos del mundo
       const exIn = document.getElementById('inp-exits');
-      exIn.disabled = true;
-      exIn.title = 'Las salidas vienen de los caminos del Creador de Mundos';
-      exIn.style.opacity = '0.6';
+      if (worldLink.salidasEditables) {
+        // Creador de Escenarios: quien hace el escenario elige por dónde salen las calzadas; al volver, sus caminos
+        // se llevan solos a estas salidas. 0° = este (+x), 90° = sur (+z), 180° = oeste, 270° = norte.
+        exIn.title = 'Ángulos de las salidas (0° este, 90° sur, 180° oeste, 270° norte). Al volver, los caminos del escenario se unen a ellas.';
+      } else {
+        // Las salidas las deciden los caminos del mundo
+        exIn.disabled = true;
+        exIn.title = 'Las salidas vienen de los caminos del Creador de Mundos';
+        exIn.style.opacity = '0.6';
+      }
     }
 
     document.getElementById('inp-exits').addEventListener('change', e => {

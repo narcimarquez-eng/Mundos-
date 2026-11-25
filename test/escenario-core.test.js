@@ -213,3 +213,46 @@ test('caminos: tramos de superficie, proyección, camino bajo un punto y barrera
   const v2 = E.deserializar(JSON.stringify(viejo)).escenario;
   assert.deepStrictEqual(v2.caminos[0].tramos, []); assert.deepStrictEqual(v2.caminos[0].barreras, []);
 });
+
+test('riachuelos: excavan el cauce y el agua nunca sube', () => {
+  const e = E.crearVacio({ tam: 600, res: 129 });
+  E.generarTerreno(e, { tipo: 'colinas', escala: 150, altura: 30, semilla: 9 });
+  const pts = []; for (let k = 0; k <= 8; k++) pts.push({ x: -280 + k * 70, z: Math.sin(k) * 40 });
+  const rio = E.crearCamino(e, { tipo: 'riachuelo', ancho: 5, puntos: pts });
+  assert.ok(E.esRio(rio));
+  const mu = E.muestrearCamino(rio, 3);
+  const antes = mu.map(m => E.alturaEn(e, m.x, m.z));
+  E.ajustarTerrenoACamino(e, rio);
+  mu.forEach((m, k) => assert.ok(E.alturaEn(e, m.x, m.z) <= antes[k] + 1e-3, 'solo excava'));
+  const niv = E.nivelesRio(e, rio, mu);
+  for (let k = 1; k < niv.length; k++) assert.ok(niv[k] <= niv[k - 1] + 1e-4, 'el agua no sube');
+  // el agua queda por encima del fondo
+  let encima = 0; mu.forEach((m, k) => { if (niv[k] > E.alturaEn(e, m.x, m.z)) encima++; });
+  assert.ok(encima > mu.length * 0.8);
+  assert.ok(!E.TIPOS_CAMINO.slice(0, 8).some(t => t[0] === 'riachuelo'), 'el riachuelo va el último (no es superficie de camino)');
+});
+
+test('pueblos: salidas creadas desde los caminos y caminos llevados a las salidas', () => {
+  const e = E.crearVacio({ tam: 1200, res: 65 });
+  const p = E.crearElemento(e, 'pueblo', 0, 0, { cfg: Object.assign(E.cfgPuebloPorDefecto(3, 3), { rotation: 30, exits: [] }) });
+  const h = E.mitadTerrenoPueblo(p.props.cfg);
+  const c = E.crearCamino(e, { puntos: [{ x: 0, z: 0 }, { x: 60, z: 10 }, { x: 400, z: 50 }] });
+  assert.strictEqual(E.conectarCaminosPueblo(e, p), 1);
+  assert.strictEqual(p.props.cfg.exits.length, 1);
+  const s = E.puntoSalidaPueblo(p, p.props.cfg.exits[0].angle);
+  assert.deepStrictEqual(c.puntos[0], { x: Math.round(s.x * 10) / 10, z: Math.round(s.z * 10) / 10 }, 'el camino empieza en la salida');
+  assert.ok(Math.hypot(s.x, s.z) >= h - 0.5, 'la salida está en el borde del terreno del pueblo');
+  assert.strictEqual(c.puntos.length, 2, 'los puntos de dentro del pueblo se quitan');
+  // el creador cambia la salida: el camino se lleva a la nueva
+  p.props.cfg.exits = [{ angle: 90, gate: null, to: '' }];
+  c.puntos.unshift({ x: 0, z: 0 });
+  E.conectarCaminosPueblo(e, p, { desdeSalidas: true });
+  const s2 = E.puntoSalidaPueblo(p, 90);
+  assert.ok(Math.hypot(c.puntos[0].x - s2.x, c.puntos[0].z - s2.z) < 0.2);
+  assert.strictEqual(p.props.cfg.exits[0].roadId, c.id);
+  // la plantilla de rally trae pueblo conectado y riachuelo
+  const r = E.crear({ plantilla: 'rally', semilla: 4242, res: 129 });
+  const pr = r.elementos.find(x => x.tipo === 'pueblo');
+  assert.ok(pr && pr.props.cfg.exits.length >= 1);
+  assert.ok(r.caminos.some(x => x.tipo === 'riachuelo'));
+});

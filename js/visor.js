@@ -8,7 +8,7 @@ const $ = id => document.getElementById(id);
 const DEG = Math.PI / 180;
 
 let esc = null, escena = null, modo = 'orbita';
-const prefs = { texturasSuelo: true, pradera: true, realistas: true, calidad: 'media', etiquetas: true, areas: false, fov: 60, vel: 22, camRec: 'persecucion', ciclo: false };
+const prefs = { pueblosReales: true, texturasSuelo: true, pradera: true, realistas: true, calidad: 'media', etiquetas: true, areas: false, fov: 60, vel: 22, camRec: 'persecucion', ciclo: false };
 try { Object.assign(prefs, JSON.parse(localStorage.getItem('escenarios.visor') || '{}')); } catch (e) { /* nada */ }
 const guardarPrefs = () => { try { localStorage.setItem('escenarios.visor', JSON.stringify(prefs)); } catch (e) { /* nada */ } };
 
@@ -31,7 +31,7 @@ new ResizeObserver(redimensionar).observe(lienzo);
 function crearEscena() {
   if (escena) { scene.clear(); }
   escena = new Escena3D({
-    scene, renderer, editor: false, calidad: prefs.calidad, arbolesRealistas: prefs.realistas, texturasSuelo: prefs.texturasSuelo,
+    scene, renderer, editor: false, calidad: prefs.calidad, arbolesRealistas: prefs.realistas, texturasSuelo: prefs.texturasSuelo, pueblosReales: prefs.pueblosReales,
     alAviso: t => setTimeout(() => aviso(t), 0), etiquetas: prefs.etiquetas, mostrarAreas: prefs.areas,
     cargarModeloLocal: id => A.cargarModelo(id),
     alCargar: n => { $('carga').hidden = !n; $('carga').textContent = '⏳ Cargando ' + n + ' modelo' + (n === 1 ? '' : 's') + '…'; }
@@ -234,6 +234,7 @@ $('chk-ciclo').addEventListener('change', e => { prefs.ciclo = e.target.checked;
 $('inp-niebla').addEventListener('input', e => { esc.ambiente.niebla = +e.target.value; escena.setNiebla(esc.ambiente.niebla); $('val-niebla').textContent = Math.round(esc.ambiente.niebla * 100) + '%'; });
 $('chk-etiquetas').addEventListener('change', e => { prefs.etiquetas = e.target.checked; guardarPrefs(); escena.o.etiquetas = prefs.etiquetas; escena.reconstruirElementos(); });
 $('chk-areas').addEventListener('change', e => { prefs.areas = e.target.checked; guardarPrefs(); escena.o.mostrarAreas = prefs.areas; escena.reconstruirElementos(); escena.setMostrarAreas(prefs.areas); });
+$('chk-pueblos').addEventListener('change', e => { prefs.pueblosReales = e.target.checked; guardarPrefs(); escena.setPueblosReales(prefs.pueblosReales); });
 $('chk-texsuelo').addEventListener('change', e => { prefs.texturasSuelo = e.target.checked; guardarPrefs(); location.reload(); });
 $('chk-pradera').addEventListener('change', e => { prefs.pradera = e.target.checked; guardarPrefs(); escena.pradera.setVisible(prefs.pradera); });
 $('chk-realistas').addEventListener('change', e => { prefs.realistas = e.target.checked; guardarPrefs(); escena.o.arbolesRealistas = prefs.realistas; escena.reconstruirElementos(); });
@@ -248,7 +249,7 @@ function rellenarAjustes() {
   $('inp-hora').value = esc.ambiente.hora; $('val-hora').textContent = fmtHora(esc.ambiente.hora);
   const nb = esc.ambiente.nubes == null ? 0.4 : esc.ambiente.nubes; $('inp-nubes').value = nb; $('val-nubes').textContent = Math.round(nb * 100) + '%';
   $('inp-niebla').value = esc.ambiente.niebla; $('val-niebla').textContent = Math.round(esc.ambiente.niebla * 100) + '%';
-  $('chk-ciclo').checked = prefs.ciclo; $('chk-realistas').checked = prefs.realistas; $('chk-pradera').checked = prefs.pradera; $('chk-texsuelo').checked = prefs.texturasSuelo; $('chk-etiquetas').checked = prefs.etiquetas; $('chk-areas').checked = prefs.areas;
+  $('chk-ciclo').checked = prefs.ciclo; $('chk-realistas').checked = prefs.realistas; $('chk-pradera').checked = prefs.pradera; $('chk-texsuelo').checked = prefs.texturasSuelo; $('chk-pueblos').checked = prefs.pueblosReales; $('chk-etiquetas').checked = prefs.etiquetas; $('chk-areas').checked = prefs.areas;
   $('sel-calidad').value = prefs.calidad; $('inp-fov').value = prefs.fov; $('val-fov').textContent = prefs.fov + '°';
   $('sel-camara-rec').value = prefs.camRec; cambiarVel(prefs.vel);
   const caminos = esc.caminos.filter(c => c.puntos.length >= 2);

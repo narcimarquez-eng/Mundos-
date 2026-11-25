@@ -12,9 +12,9 @@ const TESELA = 16;
 
 // Radios (m): cerca = matas detalladas, lejos = fin de la pradera
 export const RADIOS_PRADERA = {
-  baja: { cerca: 16, lejos: 40, paso: 1.15, pasoLejos: 2.8 },
-  media: { cerca: 28, lejos: 75, paso: 0.9, pasoLejos: 2.2 },
-  alta: { cerca: 40, lejos: 115, paso: 0.8, pasoLejos: 2.0 }
+  baja: { cerca: 26, lejos: 85, paso: 1.15, pasoLejos: 3.0 },
+  media: { cerca: 45, lejos: 140, paso: 0.9, pasoLejos: 2.6 },
+  alta: { cerca: 65, lejos: 210, paso: 0.85, pasoLejos: 2.5 }
 };
 // Color según el suelo donde crece (hierba seca más amarilla, musgo más oscuro…)
 const TINTE_SUELO = { 1: [1, 1, 1], 2: [1.18, 1.03, 0.6], 10: [0.78, 0.94, 0.74], 3: [1.05, 0.96, 0.78], 5: [1.12, 1.02, 0.72], 8: [0.86, 0.86, 0.7], 6: [1.05, 1.08, 1.1] };
@@ -44,8 +44,8 @@ export class Pradera {
     const capLejos = Math.ceil(Math.PI * (r.lejos + TESELA * 1.5) ** 2 / (r.pasoLejos * r.pasoLejos));
     this.capas = {};
     for (const tipo of TIPOS) {
-      const cerca = L.crearCapaPradera(THREE, tipo, capCerca, this.u, rend, { fadeStart: r.cerca - 7, fadeEnd: r.cerca });
-      const lejos = L.crearCapaPradera(THREE, tipo, capLejos, this.u, rend, { esLejana: true, texCompartida: cerca.userData.atlasTex, fadeInStart: r.cerca - 7, fadeInEnd: r.cerca - 1, fadeStart: r.lejos - 18, fadeEnd: r.lejos });
+      const cerca = L.crearCapaPradera(THREE, tipo, capCerca, this.u, rend, { fadeStart: r.cerca - 9, fadeEnd: r.cerca });
+      const lejos = L.crearCapaPradera(THREE, tipo, capLejos, this.u, rend, { esLejana: true, texCompartida: cerca.userData.atlasTex, fadeInStart: r.cerca - 9, fadeInEnd: r.cerca - 1, fadeStart: r.lejos - 30, fadeEnd: r.lejos });
       for (const m of [cerca, lejos]) { m.visible = true; m.instanceColor.setUsage(THREE.DynamicDrawUsage); m.instanceMatrix.setUsage(THREE.DynamicDrawUsage); this.grupo.add(m); }
       this.capas[tipo] = { cerca, lejos };
     }
@@ -138,7 +138,7 @@ export class Pradera {
       if (dMin > r.lejos) continue;
       const niveles = [];
       if (dMin < r.cerca) niveles.push(false);
-      if (dMax > r.cerca - 7) niveles.push(true);
+      if (dMax > r.cerca - 9) niveles.push(true);
       for (const lejos of niveles) {
         const t = this._tesela(tx, tz, lejos);
         if (!t) continue;

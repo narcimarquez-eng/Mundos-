@@ -48,7 +48,8 @@ const escena = new Escena3D({
   cargarModeloLocal: id => A.cargarModelo(id),
   alCargar: n => { pendientesCarga = n; const s = $('est-carga'); s.hidden = !n; s.textContent = '⏳ Cargando ' + n + ' modelo' + (n === 1 ? '' : 's'); },
   alCambiar: () => { if (sel) marcarSeleccion(); },
-  alAviso: t => setTimeout(() => aviso(t), 0)
+  alAviso: t => setTimeout(() => aviso(t), 0),
+  pueblosReales: (() => { try { return localStorage.getItem('escenarios.pueblosReales') !== '0'; } catch (e) { return true; } })()
 });
 
 // Cursor del pincel (aro sobre el terreno)
@@ -645,7 +646,7 @@ function panelCaminos() {
   cuerpo.append(titulo('🛣 Caminos, carreteras y pistas'));
   if (!c) {
     cuerpo.append(ayuda('Toca el terreno para empezar un camino nuevo y sigue tocando para añadir puntos. Doble clic o «Terminar» lo cierra.'),
-      selector('Tipo', nuevoCamino.tipo, E.TIPOS_CAMINO.map(t => [t[0], t[1]]), v => { nuevoCamino.tipo = v; nuevoCamino.bordes = v === 'asfalto'; }),
+      selector('Tipo', nuevoCamino.tipo, E.TIPOS_CAMINO.map(t => [t[0], t[1]]), v => { nuevoCamino.tipo = v; nuevoCamino.bordes = v === 'asfalto'; if (v === 'riachuelo') { nuevoCamino.ancho = 4; renderPanel(); } }),
       numero('Ancho (m)', nuevoCamino.ancho, 1, 60, 0.5, v => { nuevoCamino.ancho = v; }));
   } else {
     cuerpo.append(
@@ -654,17 +655,17 @@ function panelCaminos() {
       deslizador('Ancho', c.ancho, 1, 60, 0.5, (v, fin) => { c.ancho = v; if (fin) { terminarEdicionCamino(); } else escena.construirCaminos(); }, v => v + ' m'),
       casilla('Circuito cerrado', c.cerrado, v => { puntoDeshacer(); c.cerrado = v; terminarEdicionCamino(); }),
       casilla('Líneas en los bordes', c.bordes, v => { c.bordes = v; terminarEdicionCamino(); }),
+      E.esRio(c) ? ayuda('El agua corre del primer punto (verde) al último y nunca sube: «Excavar cauce» hunde el terreno a lo largo del río. Donde cruza un camino queda un vado.') : null,
       ayuda(c.puntos.length + ' puntos · ' + Math.round((E.muestrearCamino(c, 3).slice(-1)[0] || { d: 0 }).d) + ' m. Toca para añadir al final, toca sobre el camino para insertar, arrastra un punto para moverlo y botón derecho sobre un punto para quitarlo.'),
       botones(
-        boton('⛏ Ajustar terreno', () => { puntoDeshacer(); const reg = E.ajustarTerrenoACamino(esc, c); if (reg) { escena.actualizarTerreno(); tocarZona(reg); } programarGuardado(); aviso('Terreno allanado bajo el camino'); }, '', 'Allana el terreno a lo ancho del camino y suaviza los taludes'),
+        boton(E.esRio(c) ? '⛏ Excavar cauce' : '⛏ Ajustar terreno', () => { puntoDeshacer(); const reg = E.ajustarTerrenoACamino(esc, c); if (reg) { escena.actualizarTerreno(); tocarZona(reg); } programarGuardado(); aviso('Terreno allanado bajo el camino'); }, '', 'Allana el terreno a lo ancho del camino y suaviza los taludes'),
         boton('🖌 Pintar suelo', () => { puntoDeshacer(); const reg = E.ajustarTerrenoACamino(esc, c, { pintar: true, margen: 0.01 }); if (reg) { escena.actualizarTerreno(); tocarZona(reg); } programarGuardado(); }, '', 'Pinta el material del camino en el suelo')),
       botones(
         boton('↩ Quitar último', () => { puntoDeshacer(); c.puntos.pop(); terminarEdicionCamino(); }),
         boton('⇄ Invertir', () => { puntoDeshacer(); c.puntos.reverse(); terminarEdicionCamino(); }),
         boton('✓ Terminar', () => { caminoActivo = null; sel = null; dibujarAsas(); renderPanel(); }, 'primario')),
       botones(boton('🗑 Borrar camino', () => { puntoDeshacer(); borrar(c.id); }, 'peligro')));
-    panelTramos(c);
-    panelBarreras(c);
+    if (!E.esRio(c)) { panelTramos(c); panelBarreras(c); }
   }
   if (esc.caminos.length) {
     cuerpo.append(titulo('Caminos del escenario'));
@@ -691,12 +692,12 @@ function panelTramos(c) {
   const l = h('div', { class: 'lista' });
   if (!(c.tramos || []).length) l.append(h('div', { class: 'vacio' }, 'Todo el camino es ' + ((E.TIPOS_CAMINO.find(t => t[0] === c.tipo) || [0, c.tipo])[1]).toLowerCase() + '.'));
   (c.tramos || []).forEach((t, i) => l.append(h('div', { class: 'item' },
-    selMini(t.tipo, E.TIPOS_CAMINO.map(x => [x[0], x[1]]), v => { puntoDeshacer(); t.tipo = v; terminarEdicionCamino(); }),
+    selMini(t.tipo, E.TIPOS_CAMINO.filter(x => x[0] !== 'riachuelo').map(x => [x[0], x[1]]), v => { puntoDeshacer(); t.tipo = v; terminarEdicionCamino(); }),
     numMini(t.desde, 'Desde (m)', v => { puntoDeshacer(); t.desde = E.clamp(v, 0, total); terminarEdicionCamino(); }),
     numMini(t.hasta, 'Hasta (m)', v => { puntoDeshacer(); t.hasta = E.clamp(v, 0, total); terminarEdicionCamino(); }),
     boton('✕', () => { puntoDeshacer(); c.tramos.splice(i, 1); terminarEdicionCamino(); }))));
   cuerpo.append(l,
-    selector('Superficie del tramo nuevo', nuevaBarrera.tramo, E.TIPOS_CAMINO.map(t => [t[0], t[1]]), v => { nuevaBarrera.tramo = v; }),
+    selector('Superficie del tramo nuevo', nuevaBarrera.tramo, E.TIPOS_CAMINO.filter(t => t[0] !== 'riachuelo').map(t => [t[0], t[1]]), v => { nuevaBarrera.tramo = v; }),
     botones(boton(marcar && marcar.que === 'tramo' ? (marcar.d0 == null ? '👆 Toca el inicio…' : '👆 Toca el final…') : '📍 Marcar en el camino', () => { marcar = marcar && marcar.que === 'tramo' ? null : { que: 'tramo', d0: null }; renderPanel(); }, marcar && marcar.que === 'tramo' ? 'activa' : 'primario', 'Toca el camino en el inicio y en el final del tramo'),
       boton('➕ Tramo central', () => { puntoDeshacer(); c.tramos = c.tramos || []; c.tramos.push({ desde: Math.round(total / 3), hasta: Math.round(total * 2 / 3), tipo: nuevaBarrera.tramo }); terminarEdicionCamino(); })));
 }
@@ -826,6 +827,11 @@ function panelSeleccion() {
       ayuda('Aquí se ve una maqueta. El pueblo completo (casas, calles, río, murallas, ediciones a mano) se diseña en el Creador de Pueblos y queda guardado en este escenario.'),
       botones(boton('🏗 Abrir en el Creador de Pueblos', () => abrirCreadorPueblos(el), 'primario')),
       botones(boton('⛏ Allanar terreno aquí', () => { puntoDeshacer(); const reg = E.prepararPueblo(esc, el); escena.actualizarTerreno(); tocarZona(reg); programarGuardado(); })),
+      titulo('Salidas hacia los caminos'),
+      ayuda((el.props.cfg.exits || []).length ? 'Salidas: ' + el.props.cfg.exits.map(x => Math.round(x.angle) + '° → ' + (x.to || '')).join(' · ') + '. Se cambian en el Creador de Pueblos («Salidas hacia el mundo»): al volver, los caminos se llevan solos a ellas.' : 'Sin salidas. Haz llegar un camino al pueblo y pulsa «Crear salidas».'),
+      botones(
+        boton('🔗 Crear salidas', () => { puntoDeshacer(); const n = E.conectarCaminosPueblo(esc, el); escena.construirCaminos(); rehacerEl(); renderPanel(); aviso(n ? n + ' camino(s) unidos: salida donde llega cada uno' : 'Ningún camino llega a este pueblo'); }, '', 'Pone una salida del pueblo donde llega cada camino y lleva el camino hasta ella'),
+        boton('↪ Llevar caminos a las salidas', () => { puntoDeshacer(); const n = E.conectarCaminosPueblo(esc, el, { desdeSalidas: true }); escena.construirCaminos(); programarGuardado(); aviso(n ? n + ' camino(s) llevados a sus salidas' : 'Ningún camino llega a este pueblo'); }, '', 'Mantiene las salidas del pueblo y lleva cada camino a la más cercana')),
       numero('Radio (m)', el.props.radio, 20, 1000, 1, v => { puntoDeshacer(); el.props.radio = v; rehacerEl(); }));
   }
   if (el.tipo === 'mazmorra') {
@@ -935,6 +941,8 @@ function panelEscenario() {
       v = +v; if (v === t.res) return; puntoDeshacer(); E.remuestrear(esc, v, t.tam); escena.construir(esc); renderPanel(); programarGuardado();
     }));
 
+  cuerpo.append(titulo('Vista'),
+    casilla('Pueblos completos (cerca de la cámara)', escena.o.pueblosReales !== false, v => { escena.setPueblosReales(v); try { localStorage.setItem('escenarios.pueblosReales', v ? '1' : '0'); } catch (e) { /* nada */ } }));
   cuerpo.append(titulo('Enlaces con el Creador RPG'),
     ayuda('Dirección donde está publicado <b>Creador-de-mundos-Rpg</b>: de ahí salen los modelos de la biblioteca y se abren el Creador de Pueblos y el de Mazmorras.'),
     texto('Dirección', esc.enlaces.rpgBase, v => { esc.enlaces.rpgBase = v.trim() || E.RPG_BASE; escena.modelos.clear(); escena.reconstruirElementos(); programarGuardado(); }));
@@ -1020,7 +1028,8 @@ function baseRpg() { return (esc.enlaces.rpgBase || E.RPG_BASE).replace(/\/?$/, 
 function volverAqui() { return location.origin + location.pathname + '?id=' + encodeURIComponent(esc.id); }
 async function abrirCreadorPueblos(el) {
   await guardarYa();
-  const payload = { sessionId: 'esc:' + esc.id, townId: el.id, name: el.nombre, cfg: el.props.cfg, volver: volverAqui(), claveRetorno: RET_PUEBLO };
+  if (!(el.props.cfg.exits || []).length && E.conectarCaminosPueblo(esc, el)) { escena.construirCaminos(); await guardarYa(); }
+  const payload = { sessionId: 'esc:' + esc.id, townId: el.id, name: el.nombre, cfg: el.props.cfg, volver: volverAqui(), claveRetorno: RET_PUEBLO, salidasEditables: true };
   // El Creador de Pueblos viene incluido en esta app (copia de Creador-de-mundos-Rpg): mismo sitio, la vuelta siempre funciona
   location.href = 'creador-de-pueblos.html#mundo=' + encodeURIComponent(JSON.stringify(payload));
 }
@@ -1049,6 +1058,7 @@ function aplicarRetornos() {
         puntoDeshacer();
         el.props.cfg = Object.assign({}, el.props.cfg, v.cfg);
         el.props.radio = Math.max(el.props.radio || 0, E.radioPueblo(el.props.cfg.size));
+        if (E.conectarCaminosPueblo(esc, el, { desdeSalidas: true })) escena.construirCaminos();
         escena.actualizarElemento(el); seleccionar(el.id); enfocar(el.x, el.z, el.props.radio * 2.2);
         aviso('Diseño de «' + el.nombre + '» actualizado');
       }
