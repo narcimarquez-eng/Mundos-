@@ -1107,15 +1107,25 @@
       prepararPueblo(esc, pueblo);
       ajustarTerrenoACamino(esc, c, { margen: 12 });
       prepararPueblo(esc, pueblo);
-      // Iglesia de la Granada (Moguer): torre de 48 m, a la entrada del pueblo, junto a la pista y mirando a ella
+      // Iglesia de la Granada (Moguer): torre de 48 m, en el centro, junto a la plaza y con la fachada mirando a ella.
+      // Ocupa un solar de 81 × 64 m (props.huella): el pueblo no pone casas, calles ni árboles ahí.
       const cfgPu = pueblo.props.cfg; // el elemento guarda su propia copia
-      const ang = (cfgPu.exits[0].angle + 62) * Math.PI / 180, dIg = radioPueblo(cfgPu.size) + 48;
-      const ig = { x: pueblo.x + Math.cos(ang) * dIg, z: pueblo.z + Math.sin(ang) * dIg };
-      const ejeA = cfgPu.exits[0].angle * Math.PI / 180, ux = Math.cos(ejeA), uz = Math.sin(ejeA);
-      const proy = (ig.x - pueblo.x) * ux + (ig.z - pueblo.z) * uz, qx = pueblo.x + ux * proy, qz = pueblo.z + uz * proy;
-      allanarArea(esc, ig.x, ig.z, 44, alturaEn(esc, pueblo.x, pueblo.z), 18);
-      const iglesia = crearElemento(esc, 'glb', Math.round(ig.x), Math.round(ig.z), { nombre: 'Iglesia de Ntra. Sra. de la Granada (Moguer)', modelo: 'glb/edificios/iglesia_granada_moguer.glb', alturaObjetivo: 48 });
-      iglesia.rotY = Math.round(Math.atan2(qx - ig.x, qz - ig.z) * 180 / Math.PI); // la fachada (+z) mira a la calle de entrada
+      const HUELLA = [81, 64], dIg = 16.4 + 4 + HUELLA[1] / 2;
+      const muP = muestrearCamino(c, 3).filter(q => Math.hypot(q.x - pueblo.x, q.z - pueblo.z) < hP);
+      let ig = null;
+      for (let k = 0; k < 24; k++) { // el lado de la plaza más lejos de la pista
+        const a = k / 24 * Math.PI * 2, ux = Math.cos(a), uz = Math.sin(a);
+        const cx = pueblo.x + ux * dIg, cz = pueblo.z + uz * dIg;
+        let holgura = Infinity; // distancia de la pista al rectángulo del solar
+        for (const q of muP) {
+          const dx = q.x - cx, dz = q.z - cz, a1 = Math.abs(dx * ux + dz * uz) - HUELLA[1] / 2, a2 = Math.abs(-dx * uz + dz * ux) - HUELLA[0] / 2;
+          holgura = Math.min(holgura, Math.hypot(Math.max(a1, 0), Math.max(a2, 0)) + Math.min(Math.max(a1, a2), 0));
+        }
+        if (!ig || holgura > ig.holgura) ig = { x: cx, z: cz, ux, uz, holgura };
+      }
+      allanarArea(esc, ig.x, ig.z, Math.hypot(HUELLA[0], HUELLA[1]) / 2 + 2, alturaEn(esc, pueblo.x, pueblo.z), 14);
+      const iglesia = crearElemento(esc, 'glb', Math.round(ig.x), Math.round(ig.z), { nombre: 'Iglesia de Ntra. Sra. de la Granada (Moguer)', modelo: 'glb/edificios/iglesia_granada_moguer.glb', alturaObjetivo: 48, huella: HUELLA });
+      iglesia.rotY = Math.round(Math.atan2(-ig.ux, -ig.uz) * 180 / Math.PI); // la fachada (+z del modelo) mira a la plaza
       // Lo que va a lo largo de la vuelta, con la pista ya pasando por el pueblo
       const mu = muestrearCamino(c, 2), total = mu[mu.length - 1].d;
       const enD = d => { let k = 0; while (k < mu.length - 1 && mu[k].d < d) k++; const a = mu[Math.max(0, k - 1)], b = mu[Math.min(mu.length - 1, k + 1)]; return { x: mu[k].x, z: mu[k].z, rot: Math.atan2(b.x - a.x, b.z - a.z) * 180 / Math.PI }; };

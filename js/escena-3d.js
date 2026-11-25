@@ -10,7 +10,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
 import { Vegetacion } from './vegetacion.js';
 import { Pradera } from './pradera.js';
-import { cargarGeneradorPueblos, construirPueblo } from './pueblos3d.js';
+import { cargarGeneradorPueblos, construirPueblo, reservasDePueblo } from './pueblos3d.js';
 import { materialAgua, ponerHondura, EntornoAgua } from './agua.js';
 import { cargarSuelos, crearMezcla, actualizarMezcla, materialTerreno, materialCamino, escalaCamino, uvEnMetros } from './suelos.js';
 
@@ -477,6 +477,9 @@ registrarDibujo('pueblo', (el, ctx) => {
   });
   // Casas en anillos, sin pisar las calles
   const nCasas = Math.round((cfg.size || 3) * 9 * (cfg.houseDensity || 80) / 80);
+  // sin casas en los solares de los edificios del escenario (la iglesia…)
+  const solares = reservasDePueblo(esc, el, E.dentroTerrenoPueblo).pols;
+  const enSolar = (x, z) => solares.some(P => { let d = false; for (let i = 0, j = P.length - 1; i < P.length; j = i++) { const a = P[i], b = P[j]; if ((a.z > z) !== (b.z > z) && x < (b.x - a.x) * (z - a.z) / (b.z - a.z) + a.x) d = !d; } return d; });
   const casas = [];
   for (let k = 0; k < nCasas * 6 && casas.length < nCasas; k++) {
     const a = rng.next() * Math.PI * 2, d = R * (0.24 + rng.next() * 0.58);
@@ -485,6 +488,7 @@ registrarDibujo('pueblo', (el, ctx) => {
     let lejos = true;
     for (let s = 0; s < 4; s++) { const b = rot + s * Math.PI / 2; const dist = Math.abs(-Math.sin(b) * x + Math.cos(b) * z); const proy = Math.cos(b) * x + Math.sin(b) * z; if (proy > 0 && dist < (cfg.roadWidth || 7) / 2 + 5) lejos = false; }
     if (!lejos || casas.some(c => Math.hypot(c.x - x, c.z - z) < 11)) continue;
+    if ([[0, 0], [6, 6], [-6, 6], [6, -6], [-6, -6]].some(([ox, oz]) => enSolar(el.x + x + ox, el.z + z + oz))) continue;
     casas.push({ x, z, w: 6 + rng.next() * 4, f: 6 + rng.next() * 3, pisos: 1 + Math.floor(rng.next() * (cfg.maxFloors || 2)), a: Math.atan2(z, x) });
   }
   for (const c of casas) {
@@ -1119,8 +1123,10 @@ export class Escena3D {
     for (const el of this.esc.elementos) {
       if (el.tipo !== 'pueblo' || !el.props.cfg) continue;
       const d = Math.hypot(cp.x - el.x, cp.y - E.alturaEn(this.esc, el.x, el.z), cp.z - el.z);
-      const vivo = this.pueblosVivos.get(el.id);
+      let vivo = this.pueblosVivos.get(el.id);
       if (vivo && (!activos || d > 1200)) { this._quitarPueblo(el.id); continue; }
+      // si se ha movido un edificio con solar (la iglesia…) dentro del pueblo, se rehace
+      if (vivo && vivo.firmaReservas != null && reservasDePueblo(this.esc, el, E.dentroTerrenoPueblo).firma !== vivo.firmaReservas && !construido) { this._quitarPueblo(el.id); vivo = null; }
       if (vivo || !activos || d > 900 || construido) continue;
       if (!window.VillageLib) {
         if (!this._cargandoPueblos) {
@@ -1133,7 +1139,9 @@ export class Escena3D {
       const g = this.objetos.get(el.id);
       if (!g) continue;
       try {
-        const p = construirPueblo(window.VillageLib, el, g, (x, z) => E.alturaEn(this.esc, x, z), THREE);
+        const rs = reservasDePueblo(this.esc, el, E.dentroTerrenoPueblo);
+        const p = construirPueblo(window.VillageLib, el, g, (x, z) => E.alturaEn(this.esc, x, z), THREE, rs.pols);
+        p.firmaReservas = rs.firma;
         this.pueblosVivos.set(el.id, p);
         g.traverse(o => { if (o.userData.maqueta) o.visible = false; });
       } catch (e) { console.warn('Pueblo', el.nombre, e); this.pueblosVivos.set(el.id, { destroy() {} }); }

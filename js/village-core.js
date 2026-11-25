@@ -3428,12 +3428,30 @@
         const cfg = this.cfg;
         const r = Math.hypot(x, z);
         if (r > this.townRadius - 9 || r < 23) return false;
+        if (this.enReserva(x, z, 6)) return false;
         if (cfg.hasRiver && Math.abs(x - this.getRiverX(z)) < this.riverWidth * 1.05) return false;
         if (this.onExitCorridor(x, z, cfg.roadWidth * 0.5 + 5)) return false;
         return !this.colliders.some(c => {
           if (c.wall || (c.house && c.id === ignoreId)) return false;
           const margen = (c.house && cfg.trazado === 'adosadas') ? 1.8 : 6.5;
           return this._colliderHitsPoint(c, x, z, margen, 5);
+        });
+      }
+
+      // ¿(x, z) está en un solar reservado (cfg.reservas: [{ puntos: [{x, z}, …] }]) o a menos de «margen» de él?
+      enReserva(x, z, margen) {
+        const rs = this.cfg && this.cfg.reservas;
+        if (!rs || !rs.length) return false;
+        margen = margen || 0;
+        return rs.some(r => {
+          const P = r.puntos; let dentro = false, dmin = Infinity;
+          for (let i = 0, j = P.length - 1; i < P.length; j = i++) {
+            const a = P[i], b = P[j];
+            if ((a.z > z) !== (b.z > z) && x < (b.x - a.x) * (z - a.z) / (b.z - a.z) + a.x) dentro = !dentro;
+            const vx = b.x - a.x, vz = b.z - a.z, t = Math.max(0, Math.min(1, ((x - a.x) * vx + (z - a.z) * vz) / (vx * vx + vz * vz || 1)));
+            dmin = Math.min(dmin, Math.hypot(x - a.x - vx * t, z - a.z - vz * t));
+          }
+          return dentro || dmin < margen;
         });
       }
 
@@ -3782,7 +3800,7 @@
             const off = edit.movedStreets.get(id);
             const final = off ? pts.map(q => ({ x: q.x + off.dx, z: q.z + off.dz })) : pts;
             // la calle se corta en el borde de la plaza: no pasa por encima del adoquinado
-            const RP = 15.4, dentro = q => Math.hypot(q.x, q.z) < RP;
+            const RP = 15.4, dentro = q => Math.hypot(q.x, q.z) < RP || this.enReserva(q.x, q.z, 1.5);
             const corte = (a, b) => { // punto del segmento a-b sobre el borde de la plaza
               let t0 = 0, t1 = 1;
               for (let it = 0; it < 20; it++) { const tm = (t0 + t1) / 2, m = { x: a.x + (b.x - a.x) * tm, z: a.z + (b.z - a.z) * tm }; if (dentro(m) === dentro(a)) t0 = tm; else t1 = tm; }
@@ -4865,6 +4883,13 @@
           for (let i = barrels.length - 1; i >= 0; i--) if (onExit(barrels[i].x, barrels[i].z)) barrels.splice(i, 1);
           for (let i = rocks.length - 1; i >= 0; i--) if (onExit(rocks[i].x, rocks[i].z)) rocks.splice(i, 1);
           this.colliders = this.colliders.filter(c => !(c.type === 'circle' && c.r <= 0.7 && onExit(c.x, c.z)));
+        }
+
+        // Solares reservados (edificios del escenario, como una iglesia): fuera todo lo que caiga dentro
+        if (cfg.reservas && cfg.reservas.length) {
+          const fuera = (lista, m) => { for (let i = lista.length - 1; i >= 0; i--) if (this.enReserva(lista[i].x, lista[i].z, m)) lista.splice(i, 1); };
+          fuera(houses, 4); fuera(trees, 2); fuera(fences, 1); fuera(hedges, 1); fuera(barrels, 1); fuera(rocks, 1); fuera(lampsList, 1.5);
+          this.colliders = this.colliders.filter(c => !((c.type === 'circle' || c.house) && this.enReserva(c.x != null ? c.x : (c.minX + c.maxX) / 2, c.z != null ? c.z : (c.minZ + c.maxZ) / 2, 2)));
         }
 
         // Guijarros pequeños 3D apoyados en bordes de riberas, bordillo de plaza y base de murallas (con PRNG independiente)

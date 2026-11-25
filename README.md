@@ -23,7 +23,7 @@ Viene de la parte de edición del [Creador de Mundos RPG](https://github.com/nar
 
 Abre `index.html` servido por web (GitHub Pages o `npx serve .`); usa módulos y three.js desde jsDelivr, así que no basta con abrirlo como archivo.
 
-El escenario de ejemplo (el circuito de rally) **atraviesa un pueblo andaluz**: la pista entra por una salida, rodea la fuente de la plaza y sale por la opuesta (dentro del pueblo se corre sobre sus calles empedradas y no hay barreras). A la entrada está la **Iglesia de Nuestra Señora de la Granada de Moguer** a escala real (torre de 48 m), para mirar el pueblo con perspectiva. Además trae **dos riachuelos** (uno desemboca en el lago grande), **tres lagos** de distinto tamaño, **puentes** sobre la pista (el muelle de Riotinto y el romano) y un vado, hierba, bosques y barreras.
+El escenario de ejemplo (el circuito de rally) **atraviesa un pueblo andaluz**: la pista entra por una salida, rodea la fuente de la plaza y sale por la opuesta (dentro del pueblo se corre sobre sus calles empedradas y no hay barreras). En el centro, junto a la plaza y con la fachada mirando a ella, está la **Iglesia de Nuestra Señora de la Granada de Moguer** a escala real (torre de 48 m), para mirar el pueblo con perspectiva. Además trae **dos riachuelos** (uno desemboca en el lago grande), **tres lagos** de distinto tamaño, **puentes** sobre la pista (el muelle de Riotinto y el romano) y un vado, hierba, bosques y barreras.
 
 1. **✨ Nuevo** → elige una plantilla: Lienzo vacío, Mundo RPG, Circuito de rally, Plataformas, Archipiélago, Cordillera, Desierto o Volcán. Tamaño de 256 m a 8 km y tres niveles de detalle del terreno.
 2. **Herramientas** (barra izquierda, teclas `1`–`6`):
@@ -82,6 +82,8 @@ El Creador de Pueblos tiene el estilo **Pueblo Andaluz** y el tipo de casas **«
 - la **fachada en espejo** (la puerta y las ventanas al otro lado), además del tamaño y el giro de siempre.
 
 Con el trazado **«casas adosadas»** salen calles de casas en hilera. En el estilo andaluz la plaza es de **adoquín de granito** con cintas de piedra clara (sin mosaico) y no hay puestos de mercado (`cfg.puestos` los fuerza en cualquier estilo). El pueblo del escenario de ejemplo es andaluz, grande (tamaño 5) y con todos los solares ocupados.
+
+Un modelo `.glb` con `props.huella: [ancho, fondo]` (m) dentro de un pueblo le reserva ese solar: el pueblo no pone allí casas, calles, árboles ni farolas (se rehace solo si el modelo se mueve). Así está la iglesia del ejemplo.
 
 `Escenario.atravesarPueblo(esc, pueblo, camino)` hace que un camino cruce un pueblo: le pone dos salidas (`cfg.exits`) donde el camino entra y sale de su terreno y desvía el trazado por la plaza. Dentro del terreno del pueblo la cinta del camino no se dibuja (se usan las calles del pueblo).
 

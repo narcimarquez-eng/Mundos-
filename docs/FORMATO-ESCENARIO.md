@@ -84,7 +84,7 @@ Los puntos son de control: la línea real es una curva Catmull-Rom que pasa por 
 | `luz` | punto | `color, intensidad, alcance` |
 | `cartel` | punto | `texto, color` |
 | `camara` | punto | `altura, inclinacion`. Punto de vista para el visor (dirección = `rotY`). |
-| `glb` | punto | `modelo`, `alturaObjetivo` (0 = tamaño original), `sombras` |
+| `glb` | punto | `modelo`, `alturaObjetivo` (0 = tamaño original), `sombras`, `huella` (opcional, `[ancho, fondo]` en m: dentro de un pueblo, solar libre de casas y calles) |
 | `enemigo` | punto | `modelo, alturaObjetivo, nivel` |
 | `pueblo` | área | `radio, nivel, notas, cfg` — `cfg` es **la configuración del Creador de Pueblos** (la misma que `town.cfg` del Creador de Mundos: `style, terrainType, seed, size, houseDensity, …, rotation, exits, edits`). `cfg.exits[].angle` son las salidas (grados locales, `atan2(z, x)`); `Escenario.puntoSalidaPueblo(el, angulo)` da el punto del borde donde enlaza el camino. |
 | `zona` | área | `radio, subtipo` (caza, elite, jefe, pvp, segura, arena), `nivelMin, nivelMax, semilla, enemigos: [{ modelo, cantidad, alto }]` |
