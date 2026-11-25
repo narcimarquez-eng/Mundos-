@@ -507,6 +507,100 @@ registrarDibujo('mazmorra', (el, ctx) => {
 });
 
 // ---------------------------------------------------------------------------
+// Vallas y barreras a lado y lado de los caminos (por instancias; las piezas largas van de un poste al siguiente)
+// ---------------------------------------------------------------------------
+const BLANCO = new THREE.Color(1, 1, 1);
+function texturaRayas(c1, c2, n) {
+  const cv = document.createElement('canvas'); cv.width = 64; cv.height = 8;
+  const ctx = cv.getContext('2d');
+  for (let k = 0; k < n * 2; k++) { ctx.fillStyle = k % 2 ? c2 : c1; ctx.fillRect(k * 64 / (n * 2), 0, 64 / (n * 2) + 1, 8); }
+  const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; return t;
+}
+const cachePiezas = {};
+const pieza = (id, crear) => () => cachePiezas[id] || (cachePiezas[id] = crear());
+const PIEZAS = {
+  poste_madera: pieza('poste_madera', () => ({ geo: new THREE.BoxGeometry(0.14, 1.15, 0.14).translate(0, 0.5, 0), mat: mat('#6f4d2f') })),
+  riel_madera: pieza('riel_madera', () => ({ geo: new THREE.BoxGeometry(1, 0.11, 0.05), mat: mat('#8a6440') })),
+  poste_metal: pieza('poste_metal', () => ({ geo: new THREE.BoxGeometry(0.1, 0.8, 0.12).translate(0, 0.3, 0), mat: mat('#9aa1a8', { metalness: 0.15, roughness: 0.55 }) })),
+  bionda: pieza('bionda', () => ({ geo: new THREE.BoxGeometry(1, 0.32, 0.07), mat: mat('#d3d8de', { metalness: 0.2, roughness: 0.35 }) })),
+  neumatico: pieza('neumatico', () => ({ geo: new THREE.CylinderGeometry(0.34, 0.34, 0.24, 14).translate(0, 0.12, 0), mat: new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.92 }) })),
+  muro: pieza('muro', () => {
+    const f = new THREE.Shape([[-0.3, 0], [0.3, 0], [0.3, 0.08], [0.12, 0.3], [0.09, 0.9], [-0.09, 0.9], [-0.12, 0.3], [-0.3, 0.08]].map(([x, y]) => new THREE.Vector2(x, y)));
+    const g = new THREE.ExtrudeGeometry(f, { depth: 1, bevelEnabled: false }).translate(0, 0, -0.5).rotateY(Math.PI / 2);
+    return { geo: g, mat: new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.9 }) };
+  }),
+  poste_cinta: pieza('poste_cinta', () => ({ geo: new THREE.CylinderGeometry(0.025, 0.03, 1.0, 6).translate(0, 0.5, 0), mat: mat('#e8e8e8'), sombra: false })),
+  cinta: pieza('cinta', () => { const t = texturaRayas('#e3262b', '#ffffff', 4); return { geo: new THREE.PlaneGeometry(1, 0.08), mat: new THREE.MeshStandardMaterial({ map: t, side: THREE.DoubleSide, roughness: 0.6 }), sombra: false }; }),
+  bala_paja: pieza('bala_paja', () => ({ geo: pintarGeo(new THREE.BoxGeometry(1.2, 0.6, 0.6, 3, 2, 2).translate(0, 0.3, 0), '#d8b660', 0.18, 9), mat: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1 }) })),
+  cono: pieza('cono', () => ({ geo: unir([pintarGeo(new THREE.ConeGeometry(0.17, 0.5, 12).translate(0, 0.27, 0), '#f26a1b', 0), pintarGeo(new THREE.BoxGeometry(0.4, 0.03, 0.4).translate(0, 0.015, 0), '#222222', 0)]), mat: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6 }) })),
+  panel_publi: pieza('panel_publi', () => ({ geo: new THREE.BoxGeometry(2.8, 0.9, 0.06).translate(0, 0.85, 0), mat: new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.5 }) })),
+  pata_publi: pieza('pata_publi', () => ({ geo: new THREE.BoxGeometry(0.06, 0.45, 0.4).translate(0, 0.22, 0), mat: mat('#555a60') }))
+};
+const COLORES_PUBLI = ['#1f6fd1', '#d62a2a', '#f2c12e', '#2c9a4b', '#ffffff', '#111111'].map(c => new THREE.Color(c));
+
+// Recorre las barreras de un camino y añade sus piezas a «piezas» (id → [{ m: Matrix4, color }])
+function colocarBarreras(esc, c, piezas) {
+  const mu = E.muestrearCamino(c, 1);
+  const total = mu[mu.length - 1].d;
+  if (total <= 0) return;
+  const enD = d => {
+    if (c.cerrado) d = ((d % total) + total) % total; else d = E.clamp(d, 0, total);
+    let a = 0, b = mu.length - 1;
+    while (b - a > 1) { const m = (a + b) >> 1; if (mu[m].d < d) a = m; else b = m; }
+    const t = (d - mu[a].d) / Math.max(1e-6, mu[b].d - mu[a].d);
+    let dx = mu[b].x - mu[a].x, dz = mu[b].z - mu[a].z; const l = Math.hypot(dx, dz) || 1; dx /= l; dz /= l;
+    return { x: mu[a].x + (mu[b].x - mu[a].x) * t, z: mu[a].z + (mu[b].z - mu[a].z) * t, dx, dz };
+  };
+  const meter = (id, m, color) => (piezas[id] = piezas[id] || []).push({ m, color });
+  const q = new THREE.Quaternion(), eje = new THREE.Vector3(0, 1, 0), X = new THREE.Vector3(1, 0, 0), v = new THREE.Vector3(), s = new THREE.Vector3();
+  const poner = (id, p, giro, esc1, color) => meter(id, new THREE.Matrix4().compose(v.set(p.x, p.y, p.z), q.setFromAxisAngle(eje, giro), s.setScalar(esc1 || 1)), color);
+  // pieza larga de a a b (a la altura h sobre el suelo), con su largo como escala en x
+  const tramo = (id, a, b, h, color) => {
+    const dir = new THREE.Vector3(b.x - a.x, b.y - a.y, b.z - a.z), largo = dir.length();
+    if (largo < 0.05) return;
+    meter(id, new THREE.Matrix4().compose(v.set((a.x + b.x) / 2, (a.y + b.y) / 2 + h, (a.z + b.z) / 2), new THREE.Quaternion().setFromUnitVectors(X, dir.normalize()), s.set(largo + 0.02, 1, 1)), color);
+  };
+  for (const b of c.barreras || []) {
+    const def = (E.TIPOS_BARRERA.find(t => t[0] === b.tipo) || E.TIPOS_BARRERA[0])[2];
+    let d0 = b.desde || 0, d1 = b.hasta == null ? total : b.hasta;
+    if (d1 < d0) { if (!c.cerrado) continue; d1 += total; }
+    const n = Math.max(1, Math.round((d1 - d0) / def.paso));
+    const lados = b.lado === 'izq' ? [1] : b.lado === 'der' ? [-1] : [1, -1];
+    for (const lado of lados) {
+      const off = lado * (c.ancho / 2 + (b.separacion == null ? 1 : b.separacion));
+      const pts = [];
+      for (let k = 0; k <= n; k++) {
+        const p = enD(d0 + (d1 - d0) * k / n);
+        const x = p.x - p.dz * off, z = p.z + p.dx * off;
+        pts.push({ x, z, y: E.alturaEn(esc, x, z), giro: Math.atan2(p.dx, p.dz) });
+      }
+      const rnd = E.mulberry32(E.hashTexto(c.id + b.tipo + lado + d0));
+      pts.forEach((p, k) => {
+        const sig = pts[k + 1];
+        switch (b.tipo) {
+          case 'valla_madera': poner('poste_madera', p, p.giro); if (sig) { tramo('riel_madera', p, sig, 0.45); tramo('riel_madera', p, sig, 0.9); } break;
+          case 'guardarrail': poner('poste_metal', p, p.giro); if (sig) tramo('bionda', p, sig, 0.55); break;
+          case 'muro': if (sig) tramo('muro', p, sig, 0, new THREE.Color(k % 2 ? '#c9c4ba' : '#bdb7ac')); break;
+          case 'cinta': poner('poste_cinta', p, p.giro); if (sig) tramo('cinta', p, sig, 0.92); break;
+          case 'neumaticos': {
+            const col = k % 2 ? new THREE.Color('#1c1c1c') : (k % 4 === 0 ? new THREE.Color('#e9e9e9') : new THREE.Color('#c62828'));
+            for (let h = 0; h < 3; h++) poner('neumatico', { x: p.x, y: p.y + h * 0.24, z: p.z }, rnd() * 6, 1, h === 2 ? col : new THREE.Color('#1c1c1c'));
+            break;
+          }
+          case 'balas_paja': if (k < pts.length - 1 || pts.length === 1) poner('bala_paja', p, p.giro + Math.PI / 2 + (rnd() - 0.5) * 0.1); break;
+          case 'conos': poner('cono', p, rnd() * 6); break;
+          case 'valla_publi': if (k < pts.length - 1 || pts.length === 1) {
+            const giro = p.giro + Math.PI / 2;
+            poner('panel_publi', p, giro, 1, COLORES_PUBLI[Math.floor(rnd() * COLORES_PUBLI.length)]);
+            for (const sx of [-1.1, 1.1]) poner('pata_publi', { x: p.x + Math.cos(giro) * sx, y: p.y, z: p.z - Math.sin(giro) * sx }, giro);
+          } break;
+        }
+      });
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // La escena
 // ---------------------------------------------------------------------------
 export class Escena3D {
@@ -517,7 +611,8 @@ export class Escena3D {
     this.renderer = opts.renderer;
     this.raiz = new THREE.Group(); this.scene.add(this.raiz);
     this.gTerreno = new THREE.Group(); this.gCaminos = new THREE.Group(); this.gElementos = new THREE.Group(); this.gAreas = new THREE.Group();
-    this.raiz.add(this.gTerreno, this.gCaminos, this.gElementos, this.gAreas);
+    this.gBarreras = new THREE.Group(); this.gBarreras.name = 'barreras';
+    this.raiz.add(this.gTerreno, this.gCaminos, this.gElementos, this.gAreas, this.gBarreras);
     this.objetos = new Map(); // id → Object3D
     this.modelos = new Map(); // ruta → Promise<{ escena, animaciones }>
     this.mezcladores = [];
@@ -720,16 +815,39 @@ export class Escena3D {
     this.pradera.invalidar();
     for (const o of this.gCaminos.children.slice()) { this.gCaminos.remove(o); o.geometry && o.geometry.dispose(); }
     for (const c of this.esc.caminos) this.gCaminos.add(this._mallaCamino(c));
+    this.construirBarreras();
+  }
+  construirBarreras() {
+    for (const o of this.gBarreras.children.slice()) { this.gBarreras.remove(o); o.dispose && o.dispose(); }
+    const piezas = {};
+    for (const c of this.esc.caminos) if (c.puntos.length >= 2 && (c.barreras || []).length) colocarBarreras(this.esc, c, piezas);
+    for (const [id, lista] of Object.entries(piezas)) {
+      const def = PIEZAS[id]();
+      const im = new THREE.InstancedMesh(def.geo, def.mat, lista.length);
+      lista.forEach((it, k) => { im.setMatrixAt(k, it.m); if (it.color) im.setColorAt(k, it.color); });
+      if (lista.some(it => it.color)) for (let k = 0; k < lista.length; k++) if (!lista[k].color) im.setColorAt(k, BLANCO);
+      im.castShadow = def.sombra !== false; im.receiveShadow = true; im.computeBoundingSphere();
+      this.gBarreras.add(im);
+    }
   }
   _mallaCamino(c) {
     const esc = this.esc;
     const mu = E.muestrearCamino(c, 1.5);
     const g = new THREE.BufferGeometry();
     if (mu.length < 2) { const m = new THREE.Mesh(g); m.userData.caminoId = c.id; return m; }
-    const tipo = E.TIPOS_CAMINO.find(t => t[0] === c.tipo) || E.TIPOS_CAMINO[0];
-    const base = new THREE.Color(E.MATERIALES[tipo[2]].color), blanco = new THREE.Color('#f2f2f2'), borde = base.clone().multiplyScalar(0.8);
-    const cruz = c.bordes ? [-0.5, -0.47, -0.44, -0.41, -0.2, 0, 0.2, 0.41, 0.44, 0.47, 0.5] : [-0.5, -0.38, -0.2, 0, 0.2, 0.38, 0.5];
-    const colorEn = u => { const a = Math.abs(u); if (c.bordes && a > 0.435 && a < 0.475) return blanco; if (a > 0.45) return borde; return base; };
+    // Color de la superficie en cada punto (por tramos, con 3 m de transición) y líneas blancas donde hay asfalto o bordes
+    const colTipo = tp => { const t = E.TIPOS_CAMINO.find(x => x[0] === tp) || E.TIPOS_CAMINO[0]; return new THREE.Color(E.MATERIALES[t[2]].color); };
+    const cache = {}, colDe = tp => cache[tp] || (cache[tp] = colTipo(tp));
+    const blanco = new THREE.Color('#f2f2f2');
+    const hayLineas = c.bordes || c.tipo === 'asfalto' || (c.tramos || []).some(t => t.tipo === 'asfalto');
+    const cruz = hayLineas ? [-0.5, -0.47, -0.462, -0.448, -0.44, -0.2, 0, 0.2, 0.44, 0.448, 0.462, 0.47, 0.5] : [-0.5, -0.38, -0.2, 0, 0.2, 0.38, 0.5];
+    let base = null, lineas = false;
+    const muestraSup = d => {
+      const a = colDe(E.superficieEn(c, d - 1.5)), b = colDe(E.superficieEn(c, d)), cc = colDe(E.superficieEn(c, d + 1.5));
+      base = new THREE.Color((a.r + b.r * 2 + cc.r) / 4, (a.g + b.g * 2 + cc.g) / 4, (a.b + b.b * 2 + cc.b) / 4);
+      lineas = c.bordes || E.superficieEn(c, d) === 'asfalto';
+    };
+    const colorEn = u => { const a = Math.abs(u); if (lineas && a > 0.445 && a < 0.465) return blanco; if (a > 0.466) return base.clone().multiplyScalar(0.82); return base; };
     const pos = [], col = [], uv = [], idx = [];
     const W = cruz.length;
     const agua = esc.terreno.agua.activa ? esc.terreno.agua.nivel + 0.3 : -Infinity;
@@ -737,6 +855,7 @@ export class Escena3D {
       const a = mu[Math.max(0, k - 1)], b = mu[Math.min(mu.length - 1, k + 1)];
       let dx = b.x - a.x, dz = b.z - a.z; const l = Math.hypot(dx, dz) || 1; dx /= l; dz /= l;
       const nx = -dz, nz = dx;
+      muestraSup(mu[k].d);
       for (let q = 0; q < W; q++) {
         const u = cruz[q], x = mu[k].x + nx * u * c.ancho, z = mu[k].z + nz * u * c.ancho;
         const y = Math.max(E.alturaEn(esc, x, z), agua) + (Math.abs(u) > 0.49 ? 0.04 : 0.14);

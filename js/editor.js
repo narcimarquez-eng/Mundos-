@@ -21,6 +21,8 @@ let caminoActivo = null;        // id del camino que se edita con la herramienta
 const pincel = { modo: 'subir', radio: 25, fuerza: 0.6, material: 1, objetivo: 0, capa: 'suelo', veg: 'hierba', densidad: 0.7 };
 const colocar = { tipo: 'arbol', props: {} };
 const nuevoCamino = { tipo: 'tierra', ancho: 6, bordes: false };
+const nuevaBarrera = { tipo: 'cinta', lado: 'ambos', separacion: 2, tramo: 'asfalto' };
+let marcar = null; // { que: 'tramo'|'barrera', d0, lado } mientras se marcan dos puntos del camino
 let modoTransform = 'translate';
 const deshacer = [], rehacer = [];
 
@@ -231,6 +233,7 @@ function usarHerramienta(h) {
   orbita.touches = { ONE: ver ? THREE.TOUCH.ROTATE : null, TWO: ver ? THREE.TOUCH.DOLLY_PAN : THREE.TOUCH.DOLLY_ROTATE };
   cursor.visible = false;
   if (h !== 'caminos') caminoActivo = null;
+  marcar = null;
   if (h !== 'ver') { tc.detach(); $('modos-transform').hidden = true; }
   else if (sel) seleccionar(sel);
   dibujarAsas();
@@ -387,6 +390,7 @@ function clic(ev, boton) {
     return;
   }
   if (herramienta === 'caminos') {
+    if (marcar && boton === 0) return clicMarcar(p);
     const asa = asaCerca(ev);
     if (asa && boton === 2) { // clic derecho en un punto: quitarlo
       const c = E.buscarCamino(esc, asa.camino);
@@ -658,6 +662,8 @@ function panelCaminos() {
         boton('⇄ Invertir', () => { puntoDeshacer(); c.puntos.reverse(); terminarEdicionCamino(); }),
         boton('✓ Terminar', () => { caminoActivo = null; sel = null; dibujarAsas(); renderPanel(); }, 'primario')),
       botones(boton('🗑 Borrar camino', () => { puntoDeshacer(); borrar(c.id); }, 'peligro')));
+    panelTramos(c);
+    panelBarreras(c);
   }
   if (esc.caminos.length) {
     cuerpo.append(titulo('Caminos del escenario'));
@@ -666,6 +672,76 @@ function panelCaminos() {
       boton('Editar', () => { caminoActivo = k.id; sel = k.id; if (k.puntos[0]) enfocar(k.puntos[0].x, k.puntos[0].z, 120); dibujarAsas(); renderPanel(); })));
     cuerpo.append(l);
   }
+}
+// Fila de números pequeña para las listas de tramos y barreras
+function numMini(valor, title, fn, ancho) {
+  const i = h('input', { type: 'number', value: Math.round(valor * 10) / 10, step: 1, title, style: 'width:' + (ancho || 64) + 'px' });
+  i.addEventListener('change', () => { const v = parseFloat(i.value); if (!isNaN(v)) fn(v); });
+  return i;
+}
+function selMini(valor, ops, fn) {
+  const s2 = h('select', { style: 'flex:1;min-width:0' }, ops.map(([v, t]) => h('option', { value: v, selected: v === valor }, t)));
+  s2.addEventListener('change', () => fn(s2.value));
+  return s2;
+}
+function panelTramos(c) {
+  const total = Math.round(E.largoCamino(c));
+  cuerpo.append(titulo('Superficie por tramos'), ayuda('Partes del camino con otra superficie (el juego la lee para el agarre). Distancias en metros desde el inicio (punto verde); en un circuito un tramo puede pasar por la salida. Largo: ' + total + ' m.'));
+  const l = h('div', { class: 'lista' });
+  if (!(c.tramos || []).length) l.append(h('div', { class: 'vacio' }, 'Todo el camino es ' + ((E.TIPOS_CAMINO.find(t => t[0] === c.tipo) || [0, c.tipo])[1]).toLowerCase() + '.'));
+  (c.tramos || []).forEach((t, i) => l.append(h('div', { class: 'item' },
+    selMini(t.tipo, E.TIPOS_CAMINO.map(x => [x[0], x[1]]), v => { puntoDeshacer(); t.tipo = v; terminarEdicionCamino(); }),
+    numMini(t.desde, 'Desde (m)', v => { puntoDeshacer(); t.desde = E.clamp(v, 0, total); terminarEdicionCamino(); }),
+    numMini(t.hasta, 'Hasta (m)', v => { puntoDeshacer(); t.hasta = E.clamp(v, 0, total); terminarEdicionCamino(); }),
+    boton('✕', () => { puntoDeshacer(); c.tramos.splice(i, 1); terminarEdicionCamino(); }))));
+  cuerpo.append(l,
+    selector('Superficie del tramo nuevo', nuevaBarrera.tramo, E.TIPOS_CAMINO.map(t => [t[0], t[1]]), v => { nuevaBarrera.tramo = v; }),
+    botones(boton(marcar && marcar.que === 'tramo' ? (marcar.d0 == null ? '👆 Toca el inicio…' : '👆 Toca el final…') : '📍 Marcar en el camino', () => { marcar = marcar && marcar.que === 'tramo' ? null : { que: 'tramo', d0: null }; renderPanel(); }, marcar && marcar.que === 'tramo' ? 'activa' : 'primario', 'Toca el camino en el inicio y en el final del tramo'),
+      boton('➕ Tramo central', () => { puntoDeshacer(); c.tramos = c.tramos || []; c.tramos.push({ desde: Math.round(total / 3), hasta: Math.round(total * 2 / 3), tipo: nuevaBarrera.tramo }); terminarEdicionCamino(); })));
+}
+function panelBarreras(c) {
+  const total = Math.round(E.largoCamino(c));
+  cuerpo.append(titulo('Vallas y barreras'));
+  const l = h('div', { class: 'lista' });
+  if (!(c.barreras || []).length) l.append(h('div', { class: 'vacio' }, 'Sin barreras.'));
+  (c.barreras || []).forEach((b, i) => {
+    l.append(h('div', { class: 'item', style: 'flex-wrap:wrap' },
+      selMini(b.tipo, E.TIPOS_BARRERA.map(x => [x[0], x[1]]), v => { puntoDeshacer(); b.tipo = v; terminarEdicionCamino(); }),
+      selMini(b.lado, E.LADOS, v => { puntoDeshacer(); b.lado = v; terminarEdicionCamino(); }),
+      boton('✕', () => { puntoDeshacer(); c.barreras.splice(i, 1); terminarEdicionCamino(); }),
+      h('small', { style: 'width:100%;display:flex;gap:6px;align-items:center;color:var(--tenue)' }, 'de',
+        numMini(b.desde, 'Desde (m)', v => { puntoDeshacer(); b.desde = E.clamp(v, 0, total); terminarEdicionCamino(); }, 58), 'a',
+        numMini(b.hasta, 'Hasta (m)', v => { puntoDeshacer(); b.hasta = E.clamp(v, 0, total); terminarEdicionCamino(); }, 58), 'm · a',
+        numMini(b.separacion == null ? 1 : b.separacion, 'Separación del borde (m)', v => { puntoDeshacer(); b.separacion = E.clamp(v, 0, 50); terminarEdicionCamino(); }, 48), 'm del borde')));
+  });
+  cuerpo.append(l,
+    selector('Tipo', nuevaBarrera.tipo, E.TIPOS_BARRERA.map(t => [t[0], t[1]]), v => { nuevaBarrera.tipo = v; }),
+    selector('Lado', nuevaBarrera.lado, E.LADOS, v => { nuevaBarrera.lado = v; }),
+    numero('Separación del borde (m)', nuevaBarrera.separacion, 0, 50, 0.5, v => { nuevaBarrera.separacion = v; }),
+    botones(
+      boton(marcar && marcar.que === 'barrera' ? (marcar.d0 == null ? '👆 Toca el inicio…' : '👆 Toca el final…') : '📍 Marcar en el camino', () => { marcar = marcar && marcar.que === 'barrera' ? null : { que: 'barrera', d0: null }; renderPanel(); }, marcar && marcar.que === 'barrera' ? 'activa' : 'primario', 'Toca el camino donde empieza y donde acaba. Si tocas fuera del camino, a un lado, se pone solo en ese lado.'),
+      boton('➕ En todo el camino', () => { puntoDeshacer(); c.barreras = c.barreras || []; c.barreras.push({ tipo: nuevaBarrera.tipo, lado: nuevaBarrera.lado, desde: 0, hasta: total, separacion: nuevaBarrera.separacion }); terminarEdicionCamino(); })));
+}
+// Clic con «Marcar en el camino»: primer toque = inicio, segundo = final
+function clicMarcar(p) {
+  const c = caminoActivo && E.buscarCamino(esc, caminoActivo);
+  if (!c || !p) return;
+  const pr = E.proyectarEnCamino(c, p.x, p.z);
+  if (!pr || pr.dist > c.ancho / 2 + 25) { aviso('Toca sobre el camino o muy cerca'); return; }
+  if (marcar.d0 == null) {
+    marcar.d0 = pr.d;
+    marcar.lado = pr.dist > c.ancho / 2 ? (pr.lado > 0 ? 'izq' : 'der') : null;
+    aviso('Inicio a ' + Math.round(pr.d) + ' m. Ahora toca el final.');
+    renderPanel(); return;
+  }
+  let d0 = marcar.d0, d1 = pr.d;
+  if (!c.cerrado && d1 < d0) [d0, d1] = [d1, d0];
+  puntoDeshacer();
+  if (marcar.que === 'tramo') { c.tramos = c.tramos || []; c.tramos.push({ desde: Math.round(d0), hasta: Math.round(d1), tipo: nuevaBarrera.tramo }); }
+  else { c.barreras = c.barreras || []; c.barreras.push({ tipo: nuevaBarrera.tipo, lado: marcar.lado || nuevaBarrera.lado, desde: Math.round(d0), hasta: Math.round(d1), separacion: nuevaBarrera.separacion }); }
+  aviso((marcar.que === 'tramo' ? 'Tramo' : 'Barrera') + ' de ' + Math.round(d0) + ' a ' + Math.round(d1) + ' m');
+  marcar = null;
+  terminarEdicionCamino();
 }
 function panelColocar() {
   cuerpo.append(titulo('➕ Colocar'));

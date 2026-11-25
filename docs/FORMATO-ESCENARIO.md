@@ -42,8 +42,14 @@ Altura en un punto cualquiera: interpolación bilineal (`Escenario.alturaEn`).
 ## Camino
 ```jsonc
 { "id": "c_1", "nombre": "Circuito", "tipo": "grava", "ancho": 11, "cerrado": true, "bordes": false,
-  "puntos": [ { "x": -120, "z": 40 }, … ] }
+  "puntos": [ { "x": -120, "z": 40 }, … ],
+  "tramos": [ { "desde": 700, "hasta": 1100, "tipo": "asfalto" } ],
+  "barreras": [ { "tipo": "guardarrail", "lado": "ambos", "desde": 700, "hasta": 1100, "separacion": 0.8 } ] }
 ```
+Además, opcionales (los archivos de antes se cargan con listas vacías):
+- `tramos: [{ desde, hasta, tipo }]`: superficie distinta entre dos distancias (m desde el inicio). Si se solapan, manda el último. En un circuito (`cerrado`) un tramo con `hasta < desde` pasa por la salida.
+- `barreras: [{ tipo, lado, desde, hasta, separacion }]`: `tipo` = `cinta`, `valla_madera`, `guardarrail`, `neumaticos`, `muro`, `balas_paja`, `conos` o `valla_publi`; `lado` = `ambos`, `izq` o `der` (izquierda según el sentido del camino); `separacion` = metros desde el borde del camino.
+
 Los puntos son de control: la línea real es una curva Catmull-Rom que pasa por ellos (`Escenario.muestrearCamino(c, paso)` → `[{ x, z, d }]`, `d` = metros desde el inicio). `cerrado` une el último con el primero (circuito). `tipo`: `tierra`, `grava`, `asfalto`, `piedra`, `arena`, `barro`, `nieve`. `bordes`: líneas blancas a los lados.
 
 ## Elemento

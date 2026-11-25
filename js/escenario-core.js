@@ -108,7 +108,7 @@
     { id: 4, nombre: 'Roca', color: '#7c7873' },
     { id: 5, nombre: 'Arena', color: '#d9c58d' },
     { id: 6, nombre: 'Nieve', color: '#eef2f6' },
-    { id: 7, nombre: 'Asfalto', color: '#38393c' },
+    { id: 7, nombre: 'Asfalto', color: '#4a4b4f' },
     { id: 8, nombre: 'Barro', color: '#4f3c2b' },
     { id: 9, nombre: 'Grava', color: '#9d958b' },
     { id: 10, nombre: 'Musgo', color: '#3d5c2b' },
@@ -532,10 +532,64 @@
       id: nuevoId(esc, 'c'), nombre: opts.nombre || ('Camino ' + (esc.caminos.length + 1)),
       tipo: opts.tipo || 'tierra', ancho: opts.ancho || 6, cerrado: !!opts.cerrado,
       bordes: opts.bordes == null ? (opts.tipo === 'asfalto') : !!opts.bordes, // líneas blancas en los bordes
-      puntos: (opts.puntos || []).map(p => ({ x: p.x, z: p.z }))
+      puntos: (opts.puntos || []).map(p => ({ x: p.x, z: p.z })),
+      tramos: (opts.tramos || []).map(t => Object.assign({}, t)),     // superficie distinta por tramos: [{ desde, hasta, tipo }]
+      barreras: (opts.barreras || []).map(b => Object.assign({}, b))  // vallas y barreras: [{ tipo, lado, desde, hasta, separacion }]
     };
     esc.caminos.push(c);
     return c;
+  }
+
+  // Vallas y barreras que se ponen a los lados de un camino. paso: metros entre piezas. alto: m.
+  const TIPOS_BARRERA = [
+    ['cinta', 'Cinta de balizar', { paso: 4, alto: 1.0 }],
+    ['valla_madera', 'Valla de madera', { paso: 2.5, alto: 1.1 }],
+    ['guardarrail', 'Guardarraíl', { paso: 2, alto: 0.75 }],
+    ['neumaticos', 'Muro de neumáticos', { paso: 0.75, alto: 0.75 }],
+    ['muro', 'Muro de hormigón', { paso: 2, alto: 0.9 }],
+    ['balas_paja', 'Balas de paja', { paso: 1.3, alto: 0.6 }],
+    ['conos', 'Conos', { paso: 3, alto: 0.5 }],
+    ['valla_publi', 'Vallas publicitarias', { paso: 3, alto: 1.2 }]
+  ];
+  const LADOS = [['ambos', 'Los dos lados'], ['izq', 'Izquierda'], ['der', 'Derecha']];
+  function largoCamino(camino, muestras) { const mu = muestras || muestrearCamino(camino, 2); return mu.length ? mu[mu.length - 1].d : 0; }
+  // ¿Está la distancia d (m desde el inicio) dentro del tramo [desde, hasta]? En un circuito el tramo puede dar la vuelta.
+  function enTramo(t, d, cerrado) {
+    if (t.hasta >= t.desde) return d >= t.desde && d <= t.hasta;
+    return cerrado && (d >= t.desde || d <= t.hasta);
+  }
+  // Superficie del camino a d metros del inicio (el último tramo que la cubre manda)
+  function superficieEn(camino, d) {
+    const ts = camino.tramos || [];
+    for (let k = ts.length - 1; k >= 0; k--) if (enTramo(ts[k], d, camino.cerrado)) return ts[k].tipo;
+    return camino.tipo;
+  }
+  // Punto del camino más cercano a (x, z): { d, dist, lado (+1 izquierda, −1 derecha según el sentido), x, z }
+  function proyectarEnCamino(camino, x, z, muestras) {
+    const mu = muestras || muestrearCamino(camino, 1.5);
+    let best = null;
+    for (let k = 0; k + 1 < mu.length; k++) {
+      const a = mu[k], b = mu[k + 1];
+      const dx = b.x - a.x, dz = b.z - a.z, l2 = dx * dx + dz * dz || 1e-9;
+      const t = clamp(((x - a.x) * dx + (z - a.z) * dz) / l2, 0, 1);
+      const px = a.x + dx * t, pz = a.z + dz * t, dist = Math.hypot(x - px, z - pz);
+      if (!best || dist < best.dist) best = { d: a.d + (b.d - a.d) * t, dist, lado: (dx * (z - a.z) - dz * (x - a.x)) > 0 ? 1 : -1, x: px, z: pz };
+    }
+    return best;
+  }
+  // Camino que pisa un punto (para el juego: agarre, ruido, polvo): { camino, d, tipo, lateral } o null
+  const cacheMuestras = new WeakMap();
+  function caminoEn(esc, x, z) {
+    let mejor = null;
+    for (const c of esc.caminos) {
+      if (c.puntos.length < 2) continue;
+      let mu = cacheMuestras.get(c);
+      const firma = JSON.stringify(c.puntos) + c.cerrado;
+      if (!mu || mu.firma !== firma) { mu = muestrearCamino(c, 1.5); mu.firma = firma; cacheMuestras.set(c, mu); }
+      const p = proyectarEnCamino(c, x, z, mu);
+      if (p && p.dist <= c.ancho / 2 && (!mejor || p.dist < mejor.lateral)) mejor = { camino: c, d: p.d, tipo: superficieEn(c, p.d), lateral: p.dist };
+    }
+    return mejor;
   }
 
   // Muestrea la curva cada ~paso metros: [{ x, z, d (distancia acumulada) }]
@@ -615,12 +669,12 @@
       const k = j * r + i;
       // Si hay varios caminos cerca, nos quedamos con el cambio de mayor peso
       nuevas[k] = lerp(t.alturas[k], ras[bk], w);
-      if (opts.pintar && best <= camino.ancho / 2) t.materiales[k] = materialCamino(camino);
+      if (opts.pintar && best <= camino.ancho / 2) t.materiales[k] = materialCamino(camino, mu[bk].d);
     }
     t.alturas.set(nuevas);
     return reg;
   }
-  function materialCamino(c) { const t = TIPOS_CAMINO.find(x => x[0] === c.tipo); return t ? t[2] : 3; }
+  function materialCamino(c, d) { const tipo = d == null ? c.tipo : superficieEn(c, d); const t = TIPOS_CAMINO.find(x => x[0] === tipo); return t ? t[2] : 3; }
   function distanciaACamino(camino, x, z, muestras) {
     const mu = muestras || muestrearCamino(camino, 3);
     let best = Infinity;
@@ -747,7 +801,7 @@
       if (pueblos[0]) crearElemento(esc, 'inicio', pueblos[0].x + pueblos[0].props.radio * 0.3, pueblos[0].z);
     } });
 
-  registrarPlantilla({ id: 'rally', nombre: 'Circuito de rally', icono: '🏎', desc: 'Colinas con un circuito cerrado de grava, salida/meta, puntos de control y bosques a los lados.',
+  registrarPlantilla({ id: 'rally', nombre: 'Circuito de rally', icono: '🏎', desc: 'Colinas con un circuito cerrado de grava y un tramo de asfalto, salida/meta, controles, barreras y bosques.',
     tam: 1536, bioma: 'templado',
     aplicar(esc, rng) {
       generarTerreno(esc, { tipo: 'colinas', escala: 380, altura: 45, octavas: 5 });
@@ -766,6 +820,19 @@
       const meta = crearElemento(esc, 'meta', s0.x, s0.z, { ancho: 16 }); meta.rotY = s0.rot;
       const ini = crearElemento(esc, 'inicio', enD(total - 14).x, enD(total - 14).z); ini.rotY = s0.rot;
       for (let k = 1; k <= 5; k++) { const p = enD(total * k / 6); const cp = crearElemento(esc, 'checkpoint', p.x, p.z, { orden: k, ancho: 15, nombre: 'Control ' + k }); cp.rotY = p.rot; }
+      // Superficie mixta: un tramo de asfalto y un charco de barro
+      const r1 = Math.round(total * 0.35), r2 = Math.round(total * 0.55);
+      c.tramos.push({ desde: r1, hasta: r2, tipo: 'asfalto' }, { desde: Math.round(total * 0.76), hasta: Math.round(total * 0.8), tipo: 'barro' });
+      // Barreras: neumáticos en la salida, guardarraíl en el asfalto, cinta para el público y paja en dos controles
+      const red = v => Math.round(v);
+      c.barreras.push(
+        { tipo: 'neumaticos', lado: 'ambos', desde: red(total - 40), hasta: 40, separacion: 1.2 },
+        { tipo: 'guardarrail', lado: 'ambos', desde: r1, hasta: r2, separacion: 0.8 },
+        { tipo: 'cinta', lado: 'ambos', desde: 45, hasta: r1 - 5, separacion: 5 },
+        { tipo: 'cinta', lado: 'ambos', desde: r2 + 5, hasta: red(total - 45), separacion: 5 },
+        { tipo: 'balas_paja', lado: 'ambos', desde: red(total * 2 / 6 - 18), hasta: red(total * 2 / 6 + 18), separacion: 1.5 },
+        { tipo: 'balas_paja', lado: 'ambos', desde: red(total * 4 / 6 - 18), hasta: red(total * 4 / 6 + 18), separacion: 1.5 },
+        { tipo: 'valla_publi', lado: 'izq', desde: 12, hasta: 36, separacion: 3 });
       for (let k = 0; k < 14; k++) {
         const s = buscarSitio(esc, rng, (x, z) => distanciaACamino(c, x, z, mu) > 45);
         if (s) crearElemento(esc, 'bosque', s.x, s.z, { radio: rng.int(30, 80), densidad: rng.range(4, 10), especie: rng.pick(['pinsapo', 'pino_pinonero', 'mixto']) });
@@ -876,7 +943,7 @@
     esc.terreno.agua = Object.assign({ activa: false, nivel: 0, color: null }, t.agua || {});
     esc.ambiente = Object.assign(crearVacio().ambiente, o.ambiente || {});
     esc.enlaces = Object.assign({ rpgBase: RPG_BASE }, o.enlaces || {});
-    esc.caminos = o.caminos || []; esc.elementos = o.elementos || [];
+    esc.caminos = (o.caminos || []).map(c => Object.assign({ tramos: [], barreras: [] }, c)); esc.elementos = o.elementos || [];
     esc.glbs = {};
     const modelos = {};
     for (const [k, v] of Object.entries(o.glbs || {})) { esc.glbs[k] = { nombre: v.nombre, tam: v.tam || 0 }; if (v.bytes) modelos[k] = v.bytes; }
@@ -914,6 +981,7 @@
     crearVacio, crear, generarTerreno, paso, idx, xDe, aRejilla, dentro, alturaEn, sueloEn, pendienteIdx, rangoAlturas,
     materialAuto, materialEn, esculpir, pintar, allanarArea, caida,
     PRADERA, VEG_NADA, codVegetacion, decodVegetacion, vegetacionEn, pintarVegetacion,
+    TIPOS_BARRERA, LADOS, largoCamino, enTramo, superficieEn, proyectarEnCamino, caminoEn,
     crearCamino, muestrearCamino, rasante, ajustarTerrenoACamino, materialCamino, distanciaACamino,
     crearElemento, buscarElemento, buscarCamino, quitar, duplicarElemento, radioElemento, prepararPueblo, copiaProfunda,
     serializar, deserializar, remuestrear, bytesABase64, base64ABytes

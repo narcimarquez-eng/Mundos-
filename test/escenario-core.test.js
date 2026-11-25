@@ -178,3 +178,38 @@ test('vegetación: pintar, automática, codificación y guardado', () => {
   assert.strictEqual(c.terreno.vegetacion.length, 65 * 65);
   assert.ok(c.terreno.hierbaAuto > 0);
 });
+
+test('caminos: tramos de superficie, proyección, camino bajo un punto y barreras', () => {
+  const e = E.crearVacio({ tam: 400, res: 65 });
+  const c = E.crearCamino(e, { tipo: 'grava', ancho: 10, puntos: [{ x: -100, z: 0 }, { x: 100, z: 0 }] });
+  assert.deepStrictEqual(c.tramos, []); assert.deepStrictEqual(c.barreras, []);
+  const L = E.largoCamino(c);
+  assert.ok(Math.abs(L - 200) < 0.5);
+  c.tramos.push({ desde: 50, hasta: 120, tipo: 'asfalto' }, { desde: 100, hasta: 110, tipo: 'barro' });
+  assert.strictEqual(E.superficieEn(c, 10), 'grava');
+  assert.strictEqual(E.superficieEn(c, 60), 'asfalto');
+  assert.strictEqual(E.superficieEn(c, 105), 'barro', 'el último tramo manda');
+  const p = E.proyectarEnCamino(c, 20, 3);
+  assert.ok(Math.abs(p.d - 120) < 0.5 && Math.abs(p.dist - 3) < 0.01);
+  assert.strictEqual(E.proyectarEnCamino(c, 20, -3).lado, -p.lado, 'lados opuestos');
+  assert.strictEqual(E.caminoEn(e, -40, 2).tipo, 'asfalto');
+  assert.strictEqual(E.caminoEn(e, -40, 20), null, 'fuera del camino');
+  // en un circuito un tramo puede pasar por la salida
+  const cc = E.crearCamino(e, { cerrado: true, puntos: [{ x: 0, z: 0 }, { x: 60, z: 0 }, { x: 60, z: 60 }, { x: 0, z: 60 }] });
+  const T = E.largoCamino(cc);
+  cc.tramos.push({ desde: T - 10, hasta: 10, tipo: 'asfalto' });
+  assert.strictEqual(E.superficieEn(cc, T - 5), 'asfalto');
+  assert.strictEqual(E.superficieEn(cc, 5), 'asfalto');
+  assert.strictEqual(E.superficieEn(cc, T / 2), 'tierra');
+  // la plantilla de rally trae tramos y barreras válidos, y se conservan al guardar
+  const r = E.crear({ plantilla: 'rally', semilla: 5, res: 129 });
+  const pista = r.caminos[0];
+  assert.ok(pista.tramos.length >= 1 && pista.barreras.length >= 4);
+  for (const b of pista.barreras) assert.ok(E.TIPOS_BARRERA.some(t => t[0] === b.tipo) && E.LADOS.some(l => l[0] === b.lado));
+  const r2 = E.deserializar(JSON.stringify(E.serializar(r))).escenario;
+  assert.deepStrictEqual(r2.caminos[0].barreras, pista.barreras);
+  // archivos de antes, sin tramos ni barreras
+  const viejo = E.serializar(e); delete viejo.caminos[0].tramos; delete viejo.caminos[0].barreras;
+  const v2 = E.deserializar(JSON.stringify(viejo)).escenario;
+  assert.deepStrictEqual(v2.caminos[0].tramos, []); assert.deepStrictEqual(v2.caminos[0].barreras, []);
+});
