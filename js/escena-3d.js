@@ -11,6 +11,7 @@ import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
 import { Vegetacion } from './vegetacion.js';
 import { Pradera } from './pradera.js';
 import { cargarGeneradorPueblos, construirPueblo } from './pueblos3d.js';
+import { materialAgua, ponerHondura, EntornoAgua } from './agua.js';
 import { cargarSuelos, crearMezcla, actualizarMezcla, materialTerreno, materialCamino, escalaCamino, uvEnMetros } from './suelos.js';
 
 const E = window.Escenario;
@@ -310,8 +311,15 @@ registrarDibujo('rocas', (el, ctx) => {
 });
 registrarDibujo('lago', (el, ctx) => {
   const p = el.props;
-  const m = new THREE.Mesh(new THREE.CircleGeometry(p.radio, 64).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ color: p.color, transparent: true, opacity: 0.82, roughness: 0.08, metalness: 0.1 }));
-  m.position.y = (p.nivel || 0) + 0.05; m.receiveShadow = true; void ctx;
+  // disco con anillos (para que la hondura varíe de la orilla al centro) y uv en metros
+  const geo = new THREE.RingGeometry(0.01, p.radio, 64, 14).rotateX(-Math.PI / 2);
+  const uvs = geo.attributes.uv, pos = geo.attributes.position;
+  for (let i = 0; i < pos.count; i++) uvs.setXY(i, pos.getX(i) / 9, pos.getZ(i) / 9);
+  const nivel = ctx.baseY + (p.nivel || 0) + 0.05;
+  ponerHondura(geo, ctx.esc, nivel, (x, z) => ({ x: el.x + x, z: el.z + z }));
+  const hondo = new THREE.Color(p.color || '#2f6f8f').multiplyScalar(0.45);
+  const m = new THREE.Mesh(geo, ctx.materialAgua({ colorHondo: '#' + hondo.getHexString(), colorSomero: '#4f8a80', hondura: 1.6, clave: 'lago' + hondo.getHexString() }));
+  m.position.y = (p.nivel || 0) + 0.05; m.receiveShadow = true; m.renderOrder = 2;
   const g = new THREE.Group(); g.add(m); g.userData.sinEscala = true; return g;
 });
 
@@ -648,6 +656,9 @@ export class Escena3D {
     this.loader.setDRACOLoader(draco); this.loader.setMeshoptDecoder(MeshoptDecoder);
     this.vegetacion = new Vegetacion({ renderer: this.renderer, loader: this.loader, calidad: this.o.calidad, especies: E.ARBOLES_GLB });
     this.raiz.add(this.vegetacion.grupo);
+    this.tiempoAgua = { value: 0 };
+    this.matsAgua = [];
+    this.entornoAgua = new EntornoAgua(this.renderer);
     this.pradera = new Pradera({ renderer: this.renderer, calidad: this.o.calidad });
     this.raiz.add(this.pradera.grupo);
     // Texturas reales del suelo y de los caminos: mientras cargan se ven los colores planos. Si la gráfica no puede
@@ -710,6 +721,8 @@ export class Escena3D {
     if (dia < 0.05) this.sol.color.set('#8fa6d8');
     this.hemi.intensity = 0.2 + 0.8 * dia;
     this.vegetacion.setLuz(0.12 + 0.88 * dia);
+    this._entornoPendiente = true;
+    if (this.matsAgua) for (const m of this.matsAgua) m.envMapIntensity = 0.12 + 0.22 * dia;
     this.hemi.color.set('#cfe3ff').lerp(new THREE.Color('#33406a'), 1 - dia);
     const niebla = new THREE.Color('#bcd3e6').lerp(new THREE.Color('#e6a77a'), ocaso).lerp(new THREE.Color('#0c1220'), 1 - dia);
     this.scene.fog.color.copy(niebla);
@@ -721,6 +734,15 @@ export class Escena3D {
   setNubes(n) { // 0–1
     const u = this.cielo.material.uniforms;
     if (u.cloudCoverage) { u.cloudCoverage.value = n; u.cloudDensity.value = 0.25 + n * 0.4; }
+  }
+  crearMaterialAgua(opts) {
+    this._cacheAgua = this._cacheAgua || {};
+    if (opts && opts.clave && this._cacheAgua[opts.clave]) return this._cacheAgua[opts.clave];
+    const m = materialAgua(Object.assign({ tiempo: this.tiempoAgua }, opts));
+    if (this.entornoAgua.textura) m.envMap = this.entornoAgua.textura;
+    this.matsAgua.push(m); this._entornoPendiente = true;
+    if (opts && opts.clave) this._cacheAgua[opts.clave] = m;
+    return m;
   }
   setNiebla(n) { // 0–1
     const tam = this.esc ? this.esc.terreno.tam : 1024;
@@ -841,9 +863,16 @@ export class Escena3D {
     if (!a.activa) return;
     const B = E.BIOMAS[esc.terreno.bioma] || E.BIOMAS.templado;
     const tam = this.o.editor || esc.terreno.bordes !== 'infinito' ? esc.terreno.tam : esc.terreno.tam * 8;
-    this.agua = new THREE.Mesh(new THREE.PlaneGeometry(tam, tam).rotateX(-Math.PI / 2),
-      new THREE.MeshStandardMaterial({ color: a.color || B.agua, transparent: true, opacity: 0.84, roughness: 0.06, metalness: 0.15 }));
-    this.agua.position.y = a.nivel; this.agua.receiveShadow = true; this.agua.name = 'agua';
+    const seg = Math.min(200, Math.max(64, Math.round(tam / 12)));
+    const geo = new THREE.PlaneGeometry(tam, tam, seg, seg).rotateX(-Math.PI / 2);
+    const uvs = geo.attributes.uv, pos = geo.attributes.position;
+    for (let i = 0; i < pos.count; i++) uvs.setXY(i, pos.getX(i) / 12, pos.getZ(i) / 12);
+    ponerHondura(geo, esc, a.nivel);
+    const hondo = new THREE.Color(a.color || B.agua).multiplyScalar(0.5);
+    if (!this._matMar) this._matMar = this.crearMaterialAgua({ colorHondo: '#' + hondo.getHexString(), colorSomero: '#4f8f86', hondura: 3 });
+    else this._matMar.userData.u.uHondo.value.copy(hondo);
+    this.agua = new THREE.Mesh(geo, this._matMar);
+    this.agua.position.y = a.nivel; this.agua.receiveShadow = true; this.agua.name = 'agua'; this.agua.renderOrder = 2;
     this.gTerreno.add(this.agua);
   }
 
@@ -885,24 +914,22 @@ export class Escena3D {
   _mallaRio(c) {
     const esc = this.esc, mu = E.muestrearCamino(c, 1.5), g = new THREE.BufferGeometry();
     if (mu.length >= 2) {
-      const niv = E.nivelesRio(esc, c, mu), cruz = [-0.55, -0.3, 0, 0.3, 0.55], W = cruz.length;
-      const pos = [], uv = [], idx = [];
+      const niv = E.nivelesRio(esc, c, mu), cruz = [-1.1, -0.8, -0.55, -0.35, -0.15, 0, 0.15, 0.35, 0.55, 0.8, 1.1], W = cruz.length; // ancha: la orilla la marca el terreno
+      const pos = [], uv = [], idx = [], prof = [];
       for (let k = 0; k < mu.length; k++) {
         const a = mu[Math.max(0, k - 1)], b = mu[Math.min(mu.length - 1, k + 1)];
         let dx = b.x - a.x, dz = b.z - a.z; const l = Math.hypot(dx, dz) || 1; dx /= l; dz /= l;
-        for (const u of cruz) { pos.push(mu[k].x - dz * u * c.ancho, niv[k], mu[k].z + dx * u * c.ancho); uv.push((u + 0.5) * c.ancho / 5, mu[k].d / 5); }
+        for (const u of cruz) { const x = mu[k].x - dz * u * c.ancho, z = mu[k].z + dx * u * c.ancho; pos.push(x, niv[k], z); uv.push((u + 0.5) * c.ancho / 5, mu[k].d / 5); prof.push(niv[k] - E.alturaEn(esc, x, z)); }
         if (k > 0) for (let q = 0; q < W - 1; q++) { const a0 = (k - 1) * W + q, a1 = a0 + 1, b0 = k * W + q, b1 = b0 + 1; idx.push(a0, a1, b0, a1, b1, b0); }
       }
       g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
       g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+      g.setAttribute('aProf', new THREE.Float32BufferAttribute(prof, 1));
       g.setIndex(idx); g.computeVertexNormals();
     }
-    if (!this._matAgua) {
-      const n = new THREE.TextureLoader().load('assets/agua/waternormals.jpg');
-      n.wrapS = n.wrapT = THREE.RepeatWrapping;
-      this._matAgua = new THREE.MeshStandardMaterial({ color: '#3f7f93', roughness: 0.08, metalness: 0.1, transparent: true, opacity: 0.8, normalMap: n, normalScale: new THREE.Vector2(0.6, 0.6) });
-    }
-    const m = new THREE.Mesh(g, this._matAgua);
+    // río abajo: las ondas avanzan en el sentido del camino (v crece con la distancia)
+    if (!this._matRio) this._matRio = this.crearMaterialAgua({ flujo: [0.08, -1], colorSomero: '#4d6f5c', colorHondo: '#0c2f36', hondura: 0.7 });
+    const m = new THREE.Mesh(g, this._matRio);
     m.receiveShadow = true; m.userData.caminoId = c.id; m.renderOrder = 2;
     return m;
   }
@@ -987,6 +1014,7 @@ export class Escena3D {
       animar: (obj, anims) => self._animar(obj, anims),
       muestrasCaminos: () => self.muestrasCaminos(),
       vegetacion: this.vegetacion, realistas: this.o.arbolesRealistas !== false,
+      materialAgua: opts => self.crearMaterialAgua(opts),
       alCambiar: () => self.o.alCambiar && self.o.alCambiar()
     };
   }
@@ -1129,7 +1157,13 @@ export class Escena3D {
   actualizar(dt, camara) {
     this.reloj += dt;
     if (camara) { this.vegetacion.actualizar(camara, dt); this.pradera.actualizar(camara, dt); this._pueblosCerca(camara, dt); }
-    if (this._matAgua && this._matAgua.normalMap) this._matAgua.normalMap.offset.y -= dt * 0.18; // el agua baja
+    this.tiempoAgua.value += dt;
+    // reflejo del cielo en el agua: se rehace al cambiar la hora (como mucho cada 1,5 s)
+    if (this.matsAgua.length && this._entornoPendiente && this.reloj - (this._tEntorno || -9) > 1.5) {
+      this._entornoPendiente = false; this._tEntorno = this.reloj;
+      const tex = this.entornoAgua.actualizar(this.cielo, this.scene.fog.color);
+      for (const m of this.matsAgua) { if (!m.envMap) m.needsUpdate = true; m.envMap = tex; }
+    }
     if (this.cielo.material.uniforms.time) this.cielo.material.uniforms.time.value = this.reloj;
     for (const m of this.mezcladores) m.update(dt);
     this.gElementos.traverse(o => { if (o.userData.girar) o.rotation.y += dt * 2; });
