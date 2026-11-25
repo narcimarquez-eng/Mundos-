@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <title>Visor de Escenarios</title>
+  <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/"}}</script>
+  <link rel="stylesheet" href="css/app.css">
+  <link rel="stylesheet" href="css/visor.css">
+</head>
+<body class="visor">
+  <header id="barra">
+    <div class="logo">🌄 <span id="titulo">Visor</span></div>
+    <div class="grupo" id="modos">
+      <button data-modo="orbita" title="Órbita: girar alrededor (1)">🛰<span> Órbita</span></button>
+      <button data-modo="vuelo" title="Vuelo libre (2)">🕊<span> Vuelo</span></button>
+      <button data-modo="paseo" title="Paseo a pie (3)">🚶<span> Paseo</span></button>
+      <button data-modo="recorrido" title="Recorrer un camino (4)">🎬<span> Recorrido</span></button>
+    </div>
+    <div class="grupo derecha">
+      <button id="btn-ajustes" title="Ajustes">⚙</button>
+      <button id="btn-captura" title="Captura de pantalla (P)">📷</button>
+      <button id="btn-abrir" title="Abrir un .escenario.json">📂</button>
+      <button id="btn-editar" class="primario" title="Volver al editor">✏️<span> Editar</span></button>
+    </div>
+  </header>
+
+  <div id="lienzo"></div>
+  <div id="ayuda-modo"></div>
+  <div id="carga" hidden></div>
+  <div id="joystick" hidden><div id="palanca"></div></div>
+  <div id="botones-altura" hidden><button id="btn-subir">▲</button><button id="btn-bajar">▼</button></div>
+
+  <aside id="ajustes" hidden>
+    <h3>Ambiente</h3>
+    <div class="campo"><label>Hora</label><span class="val" id="val-hora"></span><input type="range" id="inp-hora" min="0" max="24" step="0.05"></div>
+    <div class="campo"><label>Ciclo de día automático</label><input type="checkbox" id="chk-ciclo"></div>
+    <div class="campo"><label>Nubes</label><span class="val" id="val-nubes"></span><input type="range" id="inp-nubes" min="0" max="1" step="0.01"></div>
+    <div class="campo"><label>Niebla</label><span class="val" id="val-niebla"></span><input type="range" id="inp-niebla" min="0" max="1" step="0.01"></div>
+    <h3>Ver</h3>
+    <div class="campo"><label>Nombres de pueblos, zonas…</label><input type="checkbox" id="chk-etiquetas" checked></div>
+    <div class="campo"><label>Contorno de las áreas</label><input type="checkbox" id="chk-areas"></div>
+    <div class="campo"><label>Calidad</label><select id="sel-calidad"><option value="baja">Baja (sin sombras)</option><option value="media" selected>Media</option><option value="alta">Alta</option></select></div>
+    <div class="campo"><label>Campo de visión</label><span class="val" id="val-fov"></span><input type="range" id="inp-fov" min="30" max="100" step="1" value="60"></div>
+    <h3>Recorrido</h3>
+    <div class="campo"><label>Camino</label><select id="sel-camino"></select></div>
+    <div class="campo"><label>Cámara</label><select id="sel-camara-rec"><option value="baja">A ras (conductor)</option><option value="persecucion">Persecución</option><option value="dron">Dron</option></select></div>
+    <div class="campo"><label>Velocidad</label><span class="val" id="val-vel"></span><input type="range" id="inp-vel" min="2" max="80" step="1" value="22"></div>
+    <h3>Vistas guardadas</h3>
+    <div id="lista-vistas" class="lista"></div>
+  </aside>
+
+  <input type="file" id="fichero" accept=".json,application/json" hidden>
+  <script src="js/escenario-core.js"></script>
+  <script src="js/catalogo-rpg.js"></script>
+  <script src="js/almacen.js"></script>
+  <script type="module" src="js/visor.js"></script>
+</body>
+</html>

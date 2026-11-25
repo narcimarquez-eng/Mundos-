@@ -1,0 +1,834 @@
+// Núcleo de los escenarios, sin interfaz ni three.js: funciona en el navegador (window.Escenario) y en Node (require).
+// Un escenario es un lienzo: terreno por mapa de alturas, materiales pintados, agua, caminos (curvas) y
+// elementos colocados (formas básicas, naturaleza, marcas de juego, modelos .glb, pueblos, zonas, mazmorras…).
+// Unidades en metros. El terreno está centrado en el origen: x y z van de -tam/2 a tam/2.
+(function (raiz) {
+  'use strict';
+
+  const FORMATO = 'escenario-3d';
+  const VERSION = 1;
+  const RPG_BASE = 'https://narcimarquez-eng.github.io/Creador-de-mundos-Rpg/';
+
+  // ---------------------------------------------------------------------------
+  // 1. Utilidades: azar determinista, ruido, codificación
+  // ---------------------------------------------------------------------------
+  function mulberry32(a) {
+    a = a >>> 0;
+    return function () {
+      a = (a + 0x6D2B79F5) >>> 0;
+      let t = a;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  function crearAzar(semilla) {
+    const r = mulberry32(semilla);
+    return {
+      next: r,
+      range: (a, b) => a + (b - a) * r(),
+      int: (a, b) => Math.floor(a + (b - a + 1) * r()),
+      pick: arr => arr[Math.floor(r() * arr.length)],
+      chance: p => r() < p
+    };
+  }
+  function hashTexto(s) {
+    let h = 2166136261 >>> 0;
+    for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; }
+    return h;
+  }
+  const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const suave = t => t * t * (3 - 2 * t);
+
+  // Ruido de Perlin 2D con semilla
+  function crearRuido(semilla) {
+    const rng = mulberry32(semilla);
+    const perm = new Uint8Array(256);
+    for (let i = 0; i < 256; i++) perm[i] = i;
+    for (let i = 255; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); const t = perm[i]; perm[i] = perm[j]; perm[j] = t; }
+    const p = new Uint8Array(512);
+    for (let i = 0; i < 512; i++) p[i] = perm[i & 255];
+    const GX = [1, -1, 1, -1, 1, -1, 0, 0], GY = [1, 1, -1, -1, 0, 0, 1, -1];
+    const fade = t => t * t * t * (t * (t * 6 - 15) + 10);
+    function grad(h, x, y) { const g = h & 7; return GX[g] * x + GY[g] * y; }
+    function ruido(x, y) {
+      const X = Math.floor(x), Y = Math.floor(y);
+      const xf = x - X, yf = y - Y;
+      const xi = X & 255, yi = Y & 255;
+      const u = fade(xf), v = fade(yf);
+      const aa = p[p[xi] + yi], ab = p[p[xi] + yi + 1], ba = p[p[xi + 1] + yi], bb = p[p[xi + 1] + yi + 1];
+      const x1 = lerp(grad(aa, xf, yf), grad(ba, xf - 1, yf), u);
+      const x2 = lerp(grad(ab, xf, yf - 1), grad(bb, xf - 1, yf - 1), u);
+      return lerp(x1, x2, v) * 1.414; // ~[-1, 1]
+    }
+    function fbm(x, y, oct, lac, gan) {
+      let a = 1, f = 1, s = 0, n = 0;
+      for (let o = 0; o < oct; o++) { s += a * ruido(x * f, y * f); n += a; a *= (gan || 0.5); f *= (lac || 2); }
+      return s / n;
+    }
+    function crestas(x, y, oct) {
+      let a = 1, f = 1, s = 0, n = 0, peso = 1;
+      for (let o = 0; o < oct; o++) {
+        let v = 1 - Math.abs(ruido(x * f, y * f));
+        v *= v; v *= peso; peso = clamp(v * 2, 0, 1);
+        s += a * v; n += a; a *= 0.5; f *= 2.05;
+      }
+      return s / n; // [0, 1]
+    }
+    return { ruido, fbm, crestas };
+  }
+
+  function bytesABase64(bytes) {
+    if (typeof Buffer !== 'undefined' && typeof window === 'undefined') return Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength).toString('base64');
+    let s = '';
+    const trozo = 0x8000;
+    for (let i = 0; i < bytes.length; i += trozo) s += String.fromCharCode.apply(null, bytes.subarray(i, i + trozo));
+    return btoa(s);
+  }
+  function base64ABytes(b64) {
+    if (typeof Buffer !== 'undefined' && typeof window === 'undefined') { const b = Buffer.from(b64, 'base64'); return new Uint8Array(b.buffer, b.byteOffset, b.byteLength).slice(); }
+    const s = atob(b64);
+    const out = new Uint8Array(s.length);
+    for (let i = 0; i < s.length; i++) out[i] = s.charCodeAt(i);
+    return out;
+  }
+  const f32ABase64 = a => bytesABase64(new Uint8Array(a.buffer, a.byteOffset, a.byteLength));
+  const base64AF32 = b => { const u = base64ABytes(b); return new Float32Array(u.buffer, u.byteOffset, u.byteLength / 4).slice(); };
+
+  // ---------------------------------------------------------------------------
+  // 2. Materiales del suelo y biomas
+  // ---------------------------------------------------------------------------
+  // id 0 = automático (según altura, pendiente y bioma)
+  const MATERIALES = [
+    { id: 0, nombre: 'Automático', color: '#888888' },
+    { id: 1, nombre: 'Hierba', color: '#5b8a39' },
+    { id: 2, nombre: 'Hierba seca', color: '#9c9a52' },
+    { id: 3, nombre: 'Tierra', color: '#7b5b3b' },
+    { id: 4, nombre: 'Roca', color: '#7c7873' },
+    { id: 5, nombre: 'Arena', color: '#d9c58d' },
+    { id: 6, nombre: 'Nieve', color: '#eef2f6' },
+    { id: 7, nombre: 'Asfalto', color: '#38393c' },
+    { id: 8, nombre: 'Barro', color: '#4f3c2b' },
+    { id: 9, nombre: 'Grava', color: '#9d958b' },
+    { id: 10, nombre: 'Musgo', color: '#3d5c2b' },
+    { id: 11, nombre: 'Ceniza', color: '#34302e' },
+    { id: 12, nombre: 'Hielo', color: '#b9d9ea' },
+    { id: 13, nombre: 'Baldosa', color: '#b3a48e' }
+  ];
+  const BIOMAS = {
+    templado: { nombre: 'Templado', bajo: 5, medio: 1, alto: 4, cima: 6, empinado: 4, agua: '#2f6f8f' },
+    desierto: { nombre: 'Desierto', bajo: 5, medio: 5, alto: 2, cima: 4, empinado: 4, agua: '#2b8a8f' },
+    tropical: { nombre: 'Tropical', bajo: 5, medio: 1, alto: 10, cima: 4, empinado: 4, agua: '#1f9fa8' },
+    nevado: { nombre: 'Nevado', bajo: 9, medio: 6, alto: 6, cima: 12, empinado: 4, agua: '#3d6f86' },
+    volcanico: { nombre: 'Volcánico', bajo: 11, medio: 11, alto: 4, cima: 11, empinado: 4, agua: '#4a5a62' },
+    otono: { nombre: 'Otoñal', bajo: 3, medio: 2, alto: 4, cima: 6, empinado: 4, agua: '#356b7d' }
+  };
+
+  // ---------------------------------------------------------------------------
+  // 3. Tipos de elemento (registro ampliable)
+  // ---------------------------------------------------------------------------
+  // Cada tipo: id, nombre, icono, grupo, forma ('punto' o 'area'), props por defecto y campos que se editan en el panel.
+  // Campo: { k: 'ruta.de.la.prop', n: 'Nombre', t: 'num'|'rango'|'color'|'bool'|'texto'|'sel'|'glb'|'modelo', min, max, paso, op: [[valor, texto]] }
+  const TIPOS = {};
+  const GRUPOS = [
+    { id: 'basicos', nombre: 'Formas básicas' },
+    { id: 'naturaleza', nombre: 'Naturaleza' },
+    { id: 'juego', nombre: 'Marcas de juego' },
+    { id: 'modelos', nombre: 'Modelos GLB' },
+    { id: 'rpg', nombre: 'RPG (pueblos, zonas, mazmorras)' }
+  ];
+  function registrarTipo(def) {
+    if (!def || !def.id) throw new Error('Tipo sin id');
+    TIPOS[def.id] = Object.assign({ forma: 'punto', grupo: 'basicos', props: {}, campos: [], icono: '•' }, def);
+    return TIPOS[def.id];
+  }
+  const COLOR = (k, n) => ({ k, n: n || 'Color', t: 'color' });
+  const NUM = (k, n, min, max, paso) => ({ k, n, t: 'num', min, max, paso: paso || 0.5 });
+
+  registrarTipo({ id: 'caja', nombre: 'Caja', icono: '📦', grupo: 'basicos', props: { ancho: 4, alto: 4, fondo: 4, color: '#b08b5a' },
+    campos: [NUM('ancho', 'Ancho', 0.1, 500), NUM('alto', 'Alto', 0.1, 500), NUM('fondo', 'Fondo', 0.1, 500), COLOR('color')] });
+  registrarTipo({ id: 'plataforma', nombre: 'Plataforma', icono: '▬', grupo: 'basicos', props: { ancho: 8, grosor: 1, fondo: 8, color: '#8c7a6b', borde: '#5fa04a' },
+    campos: [NUM('ancho', 'Ancho', 0.5, 500), NUM('fondo', 'Fondo', 0.5, 500), NUM('grosor', 'Grosor', 0.1, 50, 0.1), COLOR('color', 'Color'), COLOR('borde', 'Color de arriba')] });
+  registrarTipo({ id: 'rampa', nombre: 'Rampa', icono: '◢', grupo: 'basicos', props: { ancho: 8, alto: 3, largo: 12, color: '#9a8f80' },
+    campos: [NUM('ancho', 'Ancho', 0.5, 200), NUM('alto', 'Alto', 0.1, 100), NUM('largo', 'Largo', 0.5, 300), COLOR('color')] });
+  registrarTipo({ id: 'cilindro', nombre: 'Cilindro', icono: '⬭', grupo: 'basicos', props: { radio: 2, alto: 6, color: '#a0a4a8' },
+    campos: [NUM('radio', 'Radio', 0.1, 200), NUM('alto', 'Alto', 0.1, 500), COLOR('color')] });
+  registrarTipo({ id: 'esfera', nombre: 'Esfera', icono: '⚪', grupo: 'basicos', props: { radio: 3, color: '#c9b37a' },
+    campos: [NUM('radio', 'Radio', 0.1, 200), COLOR('color')] });
+  registrarTipo({ id: 'muro', nombre: 'Muro', icono: '🧱', grupo: 'basicos', props: { largo: 20, alto: 4, grosor: 1.2, color: '#8d8478' },
+    campos: [NUM('largo', 'Largo', 0.5, 500), NUM('alto', 'Alto', 0.1, 100), NUM('grosor', 'Grosor', 0.1, 20, 0.1), COLOR('color')] });
+
+  const ESPECIES = [['roble', 'Roble'], ['pino', 'Pino'], ['abeto', 'Abeto'], ['palmera', 'Palmera'], ['abedul', 'Abedul'], ['seco', 'Árbol seco'], ['cactus', 'Cactus'], ['mixto', 'Mixto']];
+  registrarTipo({ id: 'arbol', nombre: 'Árbol', icono: '🌳', grupo: 'naturaleza', props: { especie: 'roble', alto: 9 },
+    campos: [{ k: 'especie', n: 'Especie', t: 'sel', op: ESPECIES.filter(e => e[0] !== 'mixto') }, NUM('alto', 'Altura', 1, 60)] });
+  registrarTipo({ id: 'roca', nombre: 'Roca', icono: '🪨', grupo: 'naturaleza', props: { tam: 3, color: '#7d7a74' },
+    campos: [NUM('tam', 'Tamaño', 0.2, 100), COLOR('color')] });
+  registrarTipo({ id: 'bosque', nombre: 'Bosque (área)', icono: '🌲', grupo: 'naturaleza', forma: 'area', radioDefecto: 40,
+    props: { radio: 40, especie: 'mixto', densidad: 6, altoMin: 6, altoMax: 13, rocas: 0.15, semilla: 1 },
+    campos: [NUM('radio', 'Radio', 5, 2000, 1), { k: 'especie', n: 'Especie', t: 'sel', op: ESPECIES }, NUM('densidad', 'Árboles cada 1000 m²', 0.2, 40, 0.2),
+      NUM('altoMin', 'Altura mínima', 1, 60), NUM('altoMax', 'Altura máxima', 1, 60), NUM('rocas', 'Rocas (proporción)', 0, 1, 0.05), NUM('semilla', 'Semilla', 1, 99999, 1)] });
+  registrarTipo({ id: 'rocas', nombre: 'Pedregal (área)', icono: '⛰', grupo: 'naturaleza', forma: 'area', radioDefecto: 25,
+    props: { radio: 25, cantidad: 30, tamMin: 0.6, tamMax: 4, color: '#7d7a74', semilla: 1 },
+    campos: [NUM('radio', 'Radio', 2, 1000, 1), NUM('cantidad', 'Cantidad', 1, 600, 1), NUM('tamMin', 'Tamaño mínimo', 0.1, 50, 0.1), NUM('tamMax', 'Tamaño máximo', 0.1, 80, 0.1), COLOR('color'), NUM('semilla', 'Semilla', 1, 99999, 1)] });
+  registrarTipo({ id: 'lago', nombre: 'Lago (área)', icono: '💧', grupo: 'naturaleza', forma: 'area', radioDefecto: 30,
+    props: { radio: 30, nivel: 0, color: '#2f6f8f', excavar: true },
+    campos: [NUM('radio', 'Radio', 3, 2000, 1), NUM('nivel', 'Altura del agua (sobre el suelo del centro)', -20, 20, 0.1), COLOR('color', 'Color del agua')] });
+
+  registrarTipo({ id: 'inicio', nombre: 'Punto de inicio', icono: '🚩', grupo: 'juego', props: { color: '#2ecc71' }, campos: [COLOR('color')] });
+  registrarTipo({ id: 'meta', nombre: 'Meta', icono: '🏁', grupo: 'juego', props: { ancho: 14, alto: 6 }, campos: [NUM('ancho', 'Ancho', 2, 80), NUM('alto', 'Alto', 2, 30)] });
+  registrarTipo({ id: 'checkpoint', nombre: 'Punto de control', icono: '⛳', grupo: 'juego', props: { orden: 1, ancho: 12, alto: 5, color: '#3498db' },
+    campos: [NUM('orden', 'Orden', 1, 999, 1), NUM('ancho', 'Ancho', 2, 80), NUM('alto', 'Alto', 2, 30), COLOR('color')] });
+  registrarTipo({ id: 'moneda', nombre: 'Coleccionable', icono: '🪙', grupo: 'juego', props: { color: '#f1c40f', tam: 1 }, campos: [COLOR('color'), NUM('tam', 'Tamaño', 0.2, 10, 0.1)] });
+  registrarTipo({ id: 'luz', nombre: 'Luz', icono: '💡', grupo: 'juego', props: { color: '#ffd38a', intensidad: 40, alcance: 30 },
+    campos: [COLOR('color'), NUM('intensidad', 'Intensidad', 0, 2000, 1), NUM('alcance', 'Alcance (m)', 1, 300, 1)] });
+  registrarTipo({ id: 'cartel', nombre: 'Cartel', icono: '🪧', grupo: 'juego', props: { texto: 'Cartel', color: '#8b5a2b' }, campos: [{ k: 'texto', n: 'Texto', t: 'texto' }, COLOR('color')] });
+  registrarTipo({ id: 'camara', nombre: 'Punto de vista', icono: '🎥', grupo: 'juego', props: { altura: 12, inclinacion: -20 },
+    campos: [NUM('altura', 'Altura de la cámara', 0, 500, 0.5), NUM('inclinacion', 'Inclinación (°)', -89, 45, 1)] });
+
+  registrarTipo({ id: 'glb', nombre: 'Modelo GLB', icono: '🧊', grupo: 'modelos', props: { modelo: '', alturaObjetivo: 0, sombras: true },
+    campos: [{ k: 'modelo', n: 'Modelo', t: 'glb' }, NUM('alturaObjetivo', 'Ajustar a altura (m, 0 = original)', 0, 500, 0.1), { k: 'sombras', n: 'Sombras', t: 'bool' }] });
+
+  const ESTILOS_PUEBLO = [['l2_fantasy', 'Fantasía (L2)'], ['european', 'Europeo'], ['fortified', 'Fortificado'], ['trade', 'Comercio'], ['dwarven', 'Enano'], ['elven', 'Élfico'], ['desert', 'Desierto'], ['nordic', 'Nórdico'], ['oriental', 'Oriental'], ['swamp', 'Pantano']];
+  registrarTipo({ id: 'pueblo', nombre: 'Pueblo', icono: '🏘', grupo: 'rpg', forma: 'area', radioDefecto: 100,
+    props: { radio: 100, nivel: 1, cfg: null, notas: '' },
+    campos: [{ k: 'cfg.size', n: 'Tamaño (2 aldea – 5 ciudadela)', t: 'rango', min: 2, max: 5, paso: 1 }, { k: 'cfg.style', n: 'Estilo', t: 'sel', op: ESTILOS_PUEBLO },
+      { k: 'cfg.seed', n: 'Semilla', t: 'num', min: 1, max: 99999, paso: 1 }, { k: 'cfg.hasWalls', n: 'Murallas', t: 'bool' }, { k: 'cfg.hasRiver', n: 'Río', t: 'bool' },
+      NUM('nivel', 'Nivel', 1, 99, 1), { k: 'notas', n: 'Notas', t: 'texto' }],
+    accion: 'pueblo' });
+  registrarTipo({ id: 'zona', nombre: 'Zona de combate', icono: '⚔', grupo: 'rpg', forma: 'area', radioDefecto: 60,
+    props: { radio: 60, subtipo: 'caza', nivelMin: 1, nivelMax: 5, enemigos: [], semilla: 1 },
+    campos: [NUM('radio', 'Radio', 5, 2000, 1), { k: 'subtipo', n: 'Tipo', t: 'sel', op: [['caza', 'Caza'], ['elite', 'Élite'], ['jefe', 'Jefe'], ['pvp', 'PvP'], ['segura', 'Segura'], ['arena', 'Arena / circuito']] },
+      NUM('nivelMin', 'Nivel mínimo', 1, 99, 1), NUM('nivelMax', 'Nivel máximo', 1, 99, 1), NUM('semilla', 'Semilla de colocación', 1, 99999, 1)],
+    accion: 'zona' });
+  registrarTipo({ id: 'mazmorra', nombre: 'Mazmorra', icono: '🕳', grupo: 'rpg', props: { nivel: 10, dungeon: null },
+    campos: [NUM('nivel', 'Nivel', 1, 99, 1)], accion: 'mazmorra' });
+  registrarTipo({ id: 'enemigo', nombre: 'Enemigo', icono: '🐉', grupo: 'rpg', props: { modelo: '', alturaObjetivo: 2.4, nivel: 1 },
+    campos: [{ k: 'modelo', n: 'Modelo', t: 'modelo', grupo: 'enemigos' }, NUM('alturaObjetivo', 'Altura (m)', 0.2, 60, 0.1), NUM('nivel', 'Nivel', 1, 99, 1)] });
+
+  function leerRuta(obj, ruta) { return ruta.split('.').reduce((o, k) => (o == null ? undefined : o[k]), obj); }
+  function escribirRuta(obj, ruta, valor) {
+    const ks = ruta.split('.');
+    let o = obj;
+    for (let i = 0; i < ks.length - 1; i++) { if (o[ks[i]] == null || typeof o[ks[i]] !== 'object') o[ks[i]] = {}; o = o[ks[i]]; }
+    o[ks[ks.length - 1]] = valor;
+  }
+
+  // Configuración del Creador de Pueblos (misma forma que defaultTownCfg de Creador-de-mundos-Rpg/js/world-core.js)
+  function cfgPuebloPorDefecto(semilla, size) {
+    const r = crearAzar(semilla || 1);
+    const style = r.pick(['l2_fantasy', 'european', 'fortified', 'trade']);
+    size = size || 3;
+    return {
+      style, terrainType: r.pick(['plains', 'valley', 'hills']), relief: r.int(20, 60), seed: r.int(1, 99999), size,
+      houseDensity: r.int(65, 95), specialCount: clamp(size * 2 + r.int(-1, 1), 2, 10), maxFloors: r.int(2, 3), roadWidth: 7.0,
+      trazado: 'manzanas', curve: Math.round(r.range(2, 9) * 2) / 2, treeDensity: r.int(55, 85),
+      hasWalls: size >= 3, hasRiver: false, hasMagic: true, hasProps: true, hasLamps: true, hasFences: true, hasGardens: true,
+      time: 'day', rotation: 0, exits: []
+    };
+  }
+  function radioPueblo(size) { return 42 + size * 14 + 30; }
+
+  // ---------------------------------------------------------------------------
+  // 4. Escenario: creación, terreno y alturas
+  // ---------------------------------------------------------------------------
+  function nuevoId(esc, pref) { return (pref || 'e') + '_' + (esc.nextId++); }
+
+  function crearVacio(opts) {
+    opts = opts || {};
+    const tam = clamp(Math.round(opts.tam || 1024), 64, 16384);
+    const res = [65, 129, 257, 513].includes(opts.res) ? opts.res : 257;
+    const ahora = new Date().toISOString();
+    return {
+      format: FORMATO, version: VERSION,
+      id: opts.id || ('esc-' + Date.now().toString(36) + '-' + Math.floor(Math.random() * 1e6).toString(36)),
+      nombre: opts.nombre || 'Escenario sin nombre',
+      descripcion: opts.descripcion || '',
+      plantilla: opts.plantilla || 'vacio',
+      semilla: opts.semilla || 1,
+      nextId: 1,
+      creado: ahora, actualizado: ahora,
+      terreno: {
+        tam, res,
+        bioma: opts.bioma || 'templado',
+        gen: Object.assign({ tipo: 'plano', escala: 300, altura: 40, octavas: 5, base: 0, semilla: opts.semilla || 1 }, opts.gen || {}),
+        alturas: new Float32Array(res * res),
+        materiales: new Uint8Array(res * res),
+        agua: { activa: false, nivel: 0, color: null },
+        bordes: 'cortado' // 'cortado' (se ve el borde) o 'infinito' (suelo que se extiende)
+      },
+      ambiente: { hora: 13, niebla: 0.35, nubes: 0.4, cielo: 'auto' },
+      caminos: [],
+      elementos: [],
+      enlaces: { rpgBase: RPG_BASE },
+      glbs: {} // modelos importados: { id: { nombre, bytes(base64 solo al exportar con modelos) } }
+    };
+  }
+
+  function paso(esc) { return esc.terreno.tam / (esc.terreno.res - 1); }
+  function idx(esc, i, j) { return j * esc.terreno.res + i; }
+  function xDe(esc, i) { return -esc.terreno.tam / 2 + i * paso(esc); }
+  function aRejilla(esc, x, z) { const p = paso(esc), m = esc.terreno.tam / 2; return { gi: (x + m) / p, gj: (z + m) / p }; }
+  function dentro(esc, x, z) { const m = esc.terreno.tam / 2; return x >= -m && x <= m && z >= -m && z <= m; }
+
+  // Altura del terreno en un punto (interpolación bilineal)
+  function alturaEn(esc, x, z) {
+    const t = esc.terreno, r = t.res, h = t.alturas;
+    const g = aRejilla(esc, x, z);
+    const gi = clamp(g.gi, 0, r - 1.0001), gj = clamp(g.gj, 0, r - 1.0001);
+    const i = Math.floor(gi), j = Math.floor(gj), fx = gi - i, fz = gj - j;
+    const a = h[j * r + i], b = h[j * r + i + 1], c = h[(j + 1) * r + i], d = h[(j + 1) * r + i + 1];
+    return lerp(lerp(a, b, fx), lerp(c, d, fx), fz);
+  }
+  // Altura del suelo visible: terreno o agua (lo que esté más alto)
+  function sueloEn(esc, x, z) {
+    const h = alturaEn(esc, x, z);
+    const a = esc.terreno.agua;
+    return a && a.activa ? Math.max(h, a.nivel) : h;
+  }
+  function pendienteIdx(esc, i, j) {
+    const t = esc.terreno, r = t.res, h = t.alturas, p = paso(esc);
+    const i0 = Math.max(0, i - 1), i1 = Math.min(r - 1, i + 1), j0 = Math.max(0, j - 1), j1 = Math.min(r - 1, j + 1);
+    const dx = (h[j * r + i1] - h[j * r + i0]) / ((i1 - i0) * p);
+    const dz = (h[j1 * r + i] - h[j0 * r + i]) / ((j1 - j0) * p);
+    return Math.hypot(dx, dz);
+  }
+  function rangoAlturas(esc) {
+    const h = esc.terreno.alturas;
+    let mn = Infinity, mx = -Infinity;
+    for (let k = 0; k < h.length; k++) { if (h[k] < mn) mn = h[k]; if (h[k] > mx) mx = h[k]; }
+    return { min: mn, max: mx };
+  }
+
+  // Material automático según bioma, altura y pendiente
+  function materialAuto(esc, i, j, rango) {
+    const t = esc.terreno, b = BIOMAS[t.bioma] || BIOMAS.templado;
+    const h = t.alturas[j * t.res + i];
+    const s = pendienteIdx(esc, i, j);
+    if (s > 0.85) return b.empinado;
+    const agua = t.agua && t.agua.activa ? t.agua.nivel : -Infinity;
+    if (h < agua + 1.2) return b.bajo;
+    const r = rango || rangoAlturas(esc);
+    const base = Math.max(r.min, agua === -Infinity ? r.min : agua);
+    const span = Math.max(1, r.max - base);
+    const rel = (h - base) / span;
+    if (rel > 0.82 && r.max - base > 40) return b.cima;
+    if (rel > 0.6 && s > 0.45) return b.alto;
+    return b.medio;
+  }
+  function materialEn(esc, i, j, rango) {
+    const m = esc.terreno.materiales[j * esc.terreno.res + i];
+    return m || materialAuto(esc, i, j, rango);
+  }
+
+  // Genera las alturas a partir de los parámetros de esc.terreno.gen
+  const TIPOS_TERRENO = [['plano', 'Plano'], ['colinas', 'Colinas'], ['montanas', 'Montañas'], ['isla', 'Isla'], ['archipielago', 'Archipiélago'],
+    ['valle', 'Valle'], ['dunas', 'Dunas'], ['mesetas', 'Mesetas (escalones)'], ['canon', 'Cañón'], ['crater', 'Cráter / volcán']];
+
+  function generarTerreno(esc, gen) {
+    const t = esc.terreno;
+    if (gen) t.gen = Object.assign({}, t.gen, gen);
+    const g = t.gen, r = t.res, m = t.tam / 2;
+    const N = crearRuido((g.semilla || 1) * 7919 + 13);
+    const esc1 = 1 / Math.max(10, g.escala || 300);
+    const H = g.altura == null ? 40 : g.altura, oct = clamp(g.octavas || 5, 1, 8), base = g.base || 0;
+    for (let j = 0; j < r; j++) {
+      for (let i = 0; i < r; i++) {
+        const x = -m + i * t.tam / (r - 1), z = -m + j * t.tam / (r - 1);
+        const nx = x * esc1, nz = z * esc1;
+        const d = Math.hypot(x, z) / m; // 0 centro, 1 borde
+        let h = 0;
+        switch (g.tipo) {
+          case 'plano': h = N.fbm(nx * 2, nz * 2, 3) * 0.3; break;
+          case 'colinas': h = (N.fbm(nx, nz, oct) * 0.5 + 0.5) * H; break;
+          case 'montanas': { const c = N.crestas(nx, nz, oct); h = Math.pow(c, 1.6) * H + N.fbm(nx * 3, nz * 3, 3) * H * 0.05; break; }
+          case 'isla': { const f = N.fbm(nx, nz, oct) * 0.45 + 0.55 - Math.pow(d, 2.2) * 1.1; h = f * H; break; }
+          case 'archipielago': { const f = N.fbm(nx * 1.6, nz * 1.6, oct) * 0.9 + 0.12 - Math.pow(d, 3) * 0.8; h = f * H; break; }
+          case 'valle': { const v = Math.abs(x + N.fbm(nz * 0.7, 3.1, 3) * m * 0.25) / m; h = (Math.pow(v, 1.4) * 0.9 + N.fbm(nx, nz, oct) * 0.18) * H; break; }
+          case 'dunas': { const w = N.fbm(nx * 0.6, nz * 0.6, 2) * 3; h = (Math.abs(Math.sin(nx * 9 + w + nz * 2.5)) * 0.55 + N.fbm(nx * 1.5, nz * 1.5, oct) * 0.45) * H * 0.5; break; }
+          case 'mesetas': { const f = (N.fbm(nx, nz, oct) * 0.5 + 0.5) * H; const st = Math.max(2, H / 6); const k = Math.floor(f / st); const fr = (f - k * st) / st; h = (k + suave(clamp((fr - 0.75) * 4, 0, 1))) * st; break; }
+          case 'canon': { const c = 1 - Math.abs(N.fbm(nx * 0.8, nz * 0.8, 3)); const v = Math.pow(c, 10); h = (1 - v) * H + N.fbm(nx * 4, nz * 4, 3) * H * 0.04; break; }
+          case 'crater': { const anillo = Math.exp(-Math.pow((d - 0.18) / 0.09, 2)); const cono = Math.max(0, 1 - d * 1.6); h = (cono * 0.75 + anillo * 0.35 - (d < 0.18 ? (0.18 - d) * 2.4 : 0)) * H + N.fbm(nx * 2, nz * 2, oct) * H * 0.08; break; }
+          default: h = 0;
+        }
+        t.alturas[j * r + i] = h + base;
+      }
+    }
+    return esc;
+  }
+
+  // ---------------------------------------------------------------------------
+  // 5. Pinceles (esculpir y pintar). Devuelven la región cambiada en índices de rejilla.
+  // ---------------------------------------------------------------------------
+  function regionPincel(esc, x, z, radio) {
+    const r = esc.terreno.res, p = paso(esc), g = aRejilla(esc, x, z), rr = radio / p;
+    return { i0: clamp(Math.floor(g.gi - rr), 0, r - 1), i1: clamp(Math.ceil(g.gi + rr), 0, r - 1), j0: clamp(Math.floor(g.gj - rr), 0, r - 1), j1: clamp(Math.ceil(g.gj + rr), 0, r - 1) };
+  }
+  function caida(d, radio) { if (d >= radio) return 0; return 0.5 * (Math.cos(Math.PI * d / radio) + 1); }
+
+  // op: { modo: 'subir'|'bajar'|'suavizar'|'aplanar'|'ruido'|'nivel', x, z, radio, fuerza (m por aplicación o 0–1), objetivo }
+  function esculpir(esc, op) {
+    const t = esc.terreno, r = t.res, h = t.alturas, p = paso(esc);
+    const reg = regionPincel(esc, op.x, op.z, op.radio);
+    const f0 = op.fuerza == null ? 1 : op.fuerza;
+    const N = op.modo === 'ruido' ? crearRuido(op.semilla || 99) : null;
+    const orig = op.modo === 'suavizar' ? h.slice() : null;
+    for (let j = reg.j0; j <= reg.j1; j++) {
+      for (let i = reg.i0; i <= reg.i1; i++) {
+        const x = -t.tam / 2 + i * p, z = -t.tam / 2 + j * p;
+        const w = caida(Math.hypot(x - op.x, z - op.z), op.radio);
+        if (w <= 0) continue;
+        const k = j * r + i;
+        switch (op.modo) {
+          case 'subir': h[k] += f0 * w; break;
+          case 'bajar': h[k] -= f0 * w; break;
+          case 'suavizar': {
+            let s = 0, n = 0;
+            for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) {
+              const ii = i + di, jj = j + dj;
+              if (ii < 0 || jj < 0 || ii >= r || jj >= r) continue;
+              s += orig[jj * r + ii]; n++;
+            }
+            h[k] = lerp(orig[k], s / n, clamp(f0, 0, 1) * w);
+            break;
+          }
+          case 'aplanar': case 'nivel': h[k] = lerp(h[k], op.objetivo, clamp(f0, 0, 1) * w); break;
+          case 'ruido': h[k] += N.ruido(x * 0.08, z * 0.08) * f0 * w; break;
+        }
+      }
+    }
+    return reg;
+  }
+
+  // Pinta material (0 = volver a automático). Borde con algo de mezcla para que no quede recortado.
+  function pintar(esc, op) {
+    const t = esc.terreno, r = t.res, p = paso(esc);
+    const reg = regionPincel(esc, op.x, op.z, op.radio);
+    const rnd = mulberry32(Math.floor((op.x * 31 + op.z * 17) * 100) ^ 0x9e3779b9);
+    for (let j = reg.j0; j <= reg.j1; j++) {
+      for (let i = reg.i0; i <= reg.i1; i++) {
+        const x = -t.tam / 2 + i * p, z = -t.tam / 2 + j * p;
+        const w = caida(Math.hypot(x - op.x, z - op.z), op.radio);
+        if (w <= 0) continue;
+        if (w > 0.45 || rnd() < w * 2) t.materiales[j * r + i] = op.material | 0;
+      }
+    }
+    return reg;
+  }
+
+  // Allana un área circular hacia una altura (por defecto la media del centro), con transición suave en el borde.
+  function allanarArea(esc, x, z, radio, objetivo, margen) {
+    const t = esc.terreno, r = t.res, p = paso(esc);
+    margen = margen == null ? Math.max(6, radio * 0.35) : margen;
+    if (objetivo == null) {
+      let s = 0, n = 0;
+      for (let a = 0; a < 16; a++) { const ang = a / 16 * Math.PI * 2; s += alturaEn(esc, x + Math.cos(ang) * radio * 0.5, z + Math.sin(ang) * radio * 0.5); n++; }
+      s += alturaEn(esc, x, z) * 4; n += 4;
+      objetivo = s / n;
+    }
+    const reg = regionPincel(esc, x, z, radio + margen);
+    for (let j = reg.j0; j <= reg.j1; j++) for (let i = reg.i0; i <= reg.i1; i++) {
+      const d = Math.hypot(-t.tam / 2 + i * p - x, -t.tam / 2 + j * p - z);
+      if (d > radio + margen) continue;
+      const w = d <= radio ? 1 : suave(1 - (d - radio) / margen);
+      const k = j * r + i;
+      t.alturas[k] = lerp(t.alturas[k], objetivo, w);
+    }
+    return { region: reg, altura: objetivo };
+  }
+
+  // ---------------------------------------------------------------------------
+  // 6. Caminos y pistas (curvas Catmull-Rom por puntos de control)
+  // ---------------------------------------------------------------------------
+  const TIPOS_CAMINO = [['tierra', 'Tierra', 3], ['grava', 'Grava', 9], ['asfalto', 'Asfalto (carretera)', 7], ['piedra', 'Empedrado', 13], ['arena', 'Arena', 5], ['barro', 'Barro', 8], ['nieve', 'Nieve pisada', 6]];
+
+  function crearCamino(esc, opts) {
+    opts = opts || {};
+    const c = {
+      id: nuevoId(esc, 'c'), nombre: opts.nombre || ('Camino ' + (esc.caminos.length + 1)),
+      tipo: opts.tipo || 'tierra', ancho: opts.ancho || 6, cerrado: !!opts.cerrado,
+      bordes: opts.bordes == null ? (opts.tipo === 'asfalto') : !!opts.bordes, // líneas blancas en los bordes
+      puntos: (opts.puntos || []).map(p => ({ x: p.x, z: p.z }))
+    };
+    esc.caminos.push(c);
+    return c;
+  }
+
+  // Muestrea la curva cada ~paso metros: [{ x, z, d (distancia acumulada) }]
+  function muestrearCamino(camino, pasoM) {
+    const P = camino.puntos;
+    pasoM = pasoM || 2;
+    if (P.length < 2) return P.map(p => ({ x: p.x, z: p.z, d: 0 }));
+    const n = P.length, cerr = camino.cerrado && n >= 3;
+    const get = k => cerr ? P[(k + n) % n] : P[clamp(k, 0, n - 1)];
+    const segs = cerr ? n : n - 1;
+    const out = [];
+    let dAcum = 0, prev = null;
+    for (let s = 0; s < segs; s++) {
+      const p0 = get(s - 1), p1 = get(s), p2 = get(s + 1), p3 = get(s + 2);
+      const largo = Math.hypot(p2.x - p1.x, p2.z - p1.z);
+      const pasos = Math.max(1, Math.ceil(largo / pasoM));
+      for (let q = 0; q < pasos; q++) {
+        const t = q / pasos, t2 = t * t, t3 = t2 * t;
+        const cr = (a, b, c, d) => 0.5 * ((2 * b) + (-a + c) * t + (2 * a - 5 * b + 4 * c - d) * t2 + (-a + 3 * b - 3 * c + d) * t3);
+        const pt = { x: cr(p0.x, p1.x, p2.x, p3.x), z: cr(p0.z, p1.z, p2.z, p3.z) };
+        if (prev) dAcum += Math.hypot(pt.x - prev.x, pt.z - prev.z);
+        pt.d = dAcum; out.push(pt); prev = pt;
+      }
+    }
+    const ult = cerr ? P[0] : P[n - 1];
+    dAcum += Math.hypot(ult.x - prev.x, ult.z - prev.z);
+    out.push({ x: ult.x, z: ult.z, d: dAcum });
+    return out;
+  }
+
+  // Alturas suavizadas a lo largo del camino (la rasante): media móvil de la altura del terreno
+  function rasante(esc, muestras, ventana, cerrado) {
+    const n = muestras.length;
+    const base = muestras.map(m => alturaEn(esc, m.x, m.z));
+    const w = ventana || 6, out = new Float32Array(n);
+    for (let k = 0; k < n; k++) {
+      let s = 0, c = 0;
+      for (let q = -w; q <= w; q++) {
+        let kk = k + q;
+        if (cerrado) kk = (kk + n) % n; else if (kk < 0 || kk >= n) continue;
+        s += base[kk]; c++;
+      }
+      out[k] = s / c;
+    }
+    if (esc.terreno.agua && esc.terreno.agua.activa) for (let k = 0; k < n; k++) out[k] = Math.max(out[k], esc.terreno.agua.nivel + 0.4);
+    return out;
+  }
+
+  // Ajusta el terreno al camino: lo allana a lo ancho con su rasante y suaviza los taludes.
+  function ajustarTerrenoACamino(esc, camino, opts) {
+    opts = opts || {};
+    const mu = muestrearCamino(camino, Math.max(1, paso(esc) * 0.75));
+    if (mu.length < 2) return null;
+    const ras = rasante(esc, mu, opts.ventana || Math.round(10 / Math.max(1, paso(esc) * 0.75)), camino.cerrado);
+    const t = esc.terreno, r = t.res, p = paso(esc);
+    const medio = camino.ancho / 2 + 0.6, margen = opts.margen == null ? Math.max(4, camino.ancho * 0.8) : opts.margen;
+    const celda = 8, cubos = new Map();
+    mu.forEach((m, k) => { const key = Math.floor(m.x / celda) + ',' + Math.floor(m.z / celda); if (!cubos.has(key)) cubos.set(key, []); cubos.get(key).push(k); });
+    let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+    for (const m of mu) { minX = Math.min(minX, m.x); maxX = Math.max(maxX, m.x); minZ = Math.min(minZ, m.z); maxZ = Math.max(maxZ, m.z); }
+    const lim = medio + margen;
+    const g0 = aRejilla(esc, minX - lim, minZ - lim), g1 = aRejilla(esc, maxX + lim, maxZ + lim);
+    const reg = { i0: clamp(Math.floor(g0.gi), 0, r - 1), i1: clamp(Math.ceil(g1.gi), 0, r - 1), j0: clamp(Math.floor(g0.gj), 0, r - 1), j1: clamp(Math.ceil(g1.gj), 0, r - 1) };
+    const alcance = Math.ceil(lim / celda);
+    const nuevas = t.alturas.slice();
+    for (let j = reg.j0; j <= reg.j1; j++) for (let i = reg.i0; i <= reg.i1; i++) {
+      const x = -t.tam / 2 + i * p, z = -t.tam / 2 + j * p;
+      const cx = Math.floor(x / celda), cz = Math.floor(z / celda);
+      let best = Infinity, bk = -1;
+      for (let a = -alcance; a <= alcance; a++) for (let b = -alcance; b <= alcance; b++) {
+        const l = cubos.get((cx + a) + ',' + (cz + b));
+        if (!l) continue;
+        for (const k of l) { const d = Math.hypot(mu[k].x - x, mu[k].z - z); if (d < best) { best = d; bk = k; } }
+      }
+      if (bk < 0 || best > lim) continue;
+      const w = best <= medio ? 1 : suave(1 - (best - medio) / margen);
+      const k = j * r + i;
+      // Si hay varios caminos cerca, nos quedamos con el cambio de mayor peso
+      nuevas[k] = lerp(t.alturas[k], ras[bk], w);
+      if (opts.pintar && best <= camino.ancho / 2) t.materiales[k] = materialCamino(camino);
+    }
+    t.alturas.set(nuevas);
+    return reg;
+  }
+  function materialCamino(c) { const t = TIPOS_CAMINO.find(x => x[0] === c.tipo); return t ? t[2] : 3; }
+  function distanciaACamino(camino, x, z, muestras) {
+    const mu = muestras || muestrearCamino(camino, 3);
+    let best = Infinity;
+    for (const m of mu) { const d = Math.hypot(m.x - x, m.z - z); if (d < best) best = d; }
+    return best;
+  }
+
+  // ---------------------------------------------------------------------------
+  // 7. Elementos
+  // ---------------------------------------------------------------------------
+  function copiaProfunda(o) { return o == null ? o : JSON.parse(JSON.stringify(o)); }
+
+  function crearElemento(esc, tipo, x, z, props) {
+    const def = TIPOS[tipo];
+    if (!def) throw new Error('Tipo de elemento desconocido: ' + tipo);
+    const el = {
+      id: nuevoId(esc, tipo.slice(0, 3)), tipo,
+      nombre: (props && props.nombre) || def.nombre,
+      x: +x || 0, y: 0, z: +z || 0, rotY: 0, escala: 1,
+      props: Object.assign(copiaProfunda(def.props), copiaProfunda(props || {}))
+    };
+    delete el.props.nombre;
+    if (tipo === 'pueblo') {
+      if (!el.props.cfg) el.props.cfg = cfgPuebloPorDefecto(hashTexto(el.id + esc.semilla), 3);
+      if (!props || props.radio == null) el.props.radio = radioPueblo(el.props.cfg.size);
+    }
+    if (tipo === 'mazmorra' && !el.props.dungeon) el.props.dungeon = { id: el.id, name: el.nombre, nivel: el.props.nivel };
+    if (def.forma === 'area' && el.props.semilla === 1) el.props.semilla = 1 + (hashTexto(el.id + esc.id) % 99998);
+    esc.elementos.push(el);
+    return el;
+  }
+  function buscarElemento(esc, id) { return esc.elementos.find(e => e.id === id) || null; }
+  function buscarCamino(esc, id) { return esc.caminos.find(c => c.id === id) || null; }
+  function quitar(esc, id) {
+    const a = esc.elementos.length, b = esc.caminos.length;
+    esc.elementos = esc.elementos.filter(e => e.id !== id);
+    esc.caminos = esc.caminos.filter(c => c.id !== id);
+    return a !== esc.elementos.length || b !== esc.caminos.length;
+  }
+  function duplicarElemento(esc, id) {
+    const e = buscarElemento(esc, id);
+    if (!e) return null;
+    const n = copiaProfunda(e);
+    n.id = nuevoId(esc, e.tipo.slice(0, 3));
+    n.x += 6; n.z += 6;
+    esc.elementos.push(n);
+    return n;
+  }
+  function radioElemento(el) {
+    const p = el.props || {};
+    if (p.radio) return p.radio * (el.escala || 1);
+    switch (el.tipo) {
+      case 'caja': case 'plataforma': return Math.hypot(p.ancho || 4, p.fondo || 4) / 2 * (el.escala || 1);
+      case 'rampa': return Math.hypot(p.ancho || 8, p.largo || 12) / 2 * (el.escala || 1);
+      case 'muro': return (p.largo || 20) / 2 * (el.escala || 1);
+      case 'roca': return (p.tam || 3) * (el.escala || 1);
+      case 'meta': case 'checkpoint': return (p.ancho || 12) / 2;
+      default: return 3 * (el.escala || 1);
+    }
+  }
+
+  // Coloca un pueblo: allana su terreno. Devuelve la región cambiada.
+  function prepararPueblo(esc, el) {
+    if (el.tipo !== 'pueblo') return null;
+    const cfg = el.props.cfg || (el.props.cfg = cfgPuebloPorDefecto(1, 3));
+    el.props.radio = el.props.radio || radioPueblo(cfg.size);
+    return allanarArea(esc, el.x, el.z, el.props.radio * 0.9).region;
+  }
+
+  // ---------------------------------------------------------------------------
+  // 8. Plantillas
+  // ---------------------------------------------------------------------------
+  const PLANTILLAS = {};
+  function registrarPlantilla(def) { PLANTILLAS[def.id] = def; return def; }
+
+  function buscarSitio(esc, rng, filtro, intentos) {
+    const m = esc.terreno.tam / 2;
+    for (let k = 0; k < (intentos || 200); k++) {
+      const x = rng.range(-m * 0.85, m * 0.85), z = rng.range(-m * 0.85, m * 0.85);
+      if (filtro(x, z)) return { x, z };
+    }
+    return null;
+  }
+  function sobreAgua(esc, x, z, margen) { const a = esc.terreno.agua; return !a.activa || alturaEn(esc, x, z) > a.nivel + (margen || 0); }
+
+  registrarPlantilla({ id: 'vacio', nombre: 'Lienzo vacío', icono: '⬜', desc: 'Suelo plano de hierba. Empieza desde cero.',
+    aplicar(esc) { generarTerreno(esc, { tipo: 'plano', altura: 0 }); } });
+
+  registrarPlantilla({ id: 'rpg', nombre: 'Mundo RPG', icono: '🏰', desc: 'Isla grande con montañas, pueblos unidos por caminos, zonas de combate, bosques y una mazmorra.',
+    tam: 2048,
+    aplicar(esc, rng) {
+      esc.terreno.agua = { activa: true, nivel: 2, color: null };
+      generarTerreno(esc, { tipo: 'isla', escala: 520, altura: 110, octavas: 6 });
+      const pueblos = [];
+      for (let k = 0; k < 4; k++) {
+        const s = buscarSitio(esc, rng, (x, z) => {
+          const h = alturaEn(esc, x, z);
+          return h > 8 && h < 45 && pueblos.every(p => Math.hypot(p.x - x, p.z - z) > esc.terreno.tam * 0.22) && pendienteIdx(esc, Math.round(aRejilla(esc, x, z).gi), Math.round(aRejilla(esc, x, z).gj)) < 0.25;
+        }, 600) || buscarSitio(esc, rng, (x, z) => sobreAgua(esc, x, z, 6), 400);
+        if (!s) continue;
+        const el = crearElemento(esc, 'pueblo', s.x, s.z, { nombre: ['Valdris', 'Lorrin', 'Ostmark', 'Elarion', 'Brennhal'][k], nivel: 1 + k * 5,
+          cfg: cfgPuebloPorDefecto(rng.int(1, 99999), k === 0 ? 4 : rng.int(2, 3)) });
+        el.props.radio = radioPueblo(el.props.cfg.size);
+        prepararPueblo(esc, el);
+        pueblos.push(el);
+      }
+      // Caminos entre pueblos seguidos y una mazmorra al final
+      for (let k = 0; k + 1 < pueblos.length; k++) {
+        const a = pueblos[k], b = pueblos[k + 1];
+        const mx = (a.x + b.x) / 2 + rng.range(-80, 80), mz = (a.z + b.z) / 2 + rng.range(-80, 80);
+        const c = crearCamino(esc, { tipo: 'tierra', ancho: 6, puntos: [{ x: a.x, z: a.z }, { x: mx, z: mz }, { x: b.x, z: b.z }], nombre: a.nombre + ' – ' + b.nombre });
+        ajustarTerrenoACamino(esc, c);
+        const z = crearElemento(esc, 'zona', mx + rng.range(-40, 40), mz + rng.range(-40, 40), { nombre: 'Zona ' + (k + 1), nivelMin: 1 + k * 5, nivelMax: 5 + k * 5, radio: 70,
+          subtipo: k === pueblos.length - 2 ? 'jefe' : 'caza' });
+        void z;
+      }
+      for (const p of pueblos) prepararPueblo(esc, p);
+      const alto = buscarSitio(esc, rng, (x, z) => alturaEn(esc, x, z) > 55, 800);
+      if (alto) crearElemento(esc, 'mazmorra', alto.x, alto.z, { nombre: 'Cripta de la montaña', nivel: 20 });
+      for (let k = 0; k < 10; k++) {
+        const s = buscarSitio(esc, rng, (x, z) => { const h = alturaEn(esc, x, z); return h > 6 && h < 50 && pueblos.every(p => Math.hypot(p.x - x, p.z - z) > p.props.radio + 60); });
+        if (s) crearElemento(esc, 'bosque', s.x, s.z, { radio: rng.int(40, 110), densidad: rng.range(3, 8) });
+      }
+      if (pueblos[0]) crearElemento(esc, 'inicio', pueblos[0].x + pueblos[0].props.radio * 0.3, pueblos[0].z);
+    } });
+
+  registrarPlantilla({ id: 'rally', nombre: 'Circuito de rally', icono: '🏎', desc: 'Colinas con un circuito cerrado de grava, salida/meta, puntos de control y bosques a los lados.',
+    tam: 1536, bioma: 'templado',
+    aplicar(esc, rng) {
+      generarTerreno(esc, { tipo: 'colinas', escala: 380, altura: 45, octavas: 5 });
+      const R = esc.terreno.tam * 0.3, n = 14, pts = [];
+      const N = crearRuido(rng.int(1, 1e6));
+      for (let k = 0; k < n; k++) {
+        const a = k / n * Math.PI * 2;
+        const rr = R * (0.72 + 0.45 * (N.ruido(Math.cos(a) * 1.3, Math.sin(a) * 1.3) * 0.5 + 0.5));
+        pts.push({ x: Math.cos(a) * rr * 1.15, z: Math.sin(a) * rr * 0.85 });
+      }
+      const c = crearCamino(esc, { tipo: 'grava', ancho: 11, cerrado: true, puntos: pts, nombre: 'Circuito' });
+      ajustarTerrenoACamino(esc, c, { margen: 12 });
+      const mu = muestrearCamino(c, 2), total = mu[mu.length - 1].d;
+      const enD = d => { let k = 0; while (k < mu.length - 1 && mu[k].d < d) k++; const a = mu[Math.max(0, k - 1)], b = mu[Math.min(mu.length - 1, k + 1)]; return { x: mu[k].x, z: mu[k].z, rot: Math.atan2(b.x - a.x, b.z - a.z) * 180 / Math.PI }; };
+      const s0 = enD(4);
+      const meta = crearElemento(esc, 'meta', s0.x, s0.z, { ancho: 16 }); meta.rotY = s0.rot;
+      const ini = crearElemento(esc, 'inicio', enD(total - 14).x, enD(total - 14).z); ini.rotY = s0.rot;
+      for (let k = 1; k <= 5; k++) { const p = enD(total * k / 6); const cp = crearElemento(esc, 'checkpoint', p.x, p.z, { orden: k, ancho: 15, nombre: 'Control ' + k }); cp.rotY = p.rot; }
+      for (let k = 0; k < 14; k++) {
+        const s = buscarSitio(esc, rng, (x, z) => distanciaACamino(c, x, z, mu) > 45);
+        if (s) crearElemento(esc, 'bosque', s.x, s.z, { radio: rng.int(30, 80), densidad: rng.range(4, 10), especie: rng.pick(['pino', 'abeto', 'mixto']) });
+      }
+      for (let k = 0; k < 8; k++) {
+        const s = buscarSitio(esc, rng, (x, z) => { const d = distanciaACamino(c, x, z, mu); return d > 12 && d < 30; });
+        if (s) crearElemento(esc, 'rocas', s.x, s.z, { radio: 10, cantidad: 8, tamMax: 2.5 });
+      }
+    } });
+
+  registrarPlantilla({ id: 'plataformas', nombre: 'Plataformas', icono: '🍄', desc: 'Lago con una cadena de plataformas flotantes que suben hasta la meta.',
+    tam: 512, bioma: 'tropical',
+    aplicar(esc, rng) {
+      esc.terreno.agua = { activa: true, nivel: 0, color: null };
+      generarTerreno(esc, { tipo: 'archipielago', escala: 160, altura: 14, octavas: 4, base: -3 });
+      allanarArea(esc, -150, 0, 30, 4);
+      crearElemento(esc, 'inicio', -150, 0).rotY = 90;
+      let x = -120, z = 0, y = 4, dir = 0;
+      const colores = ['#c0392b', '#e67e22', '#8e44ad', '#16a085', '#2980b9'];
+      for (let k = 0; k < 22; k++) {
+        dir += rng.range(-0.6, 0.6);
+        x += Math.cos(dir) * rng.range(9, 14); z += Math.sin(dir) * rng.range(9, 14);
+        y += rng.range(0.5, 2.6);
+        const suelo = alturaEn(esc, x, z);
+        const p = crearElemento(esc, 'plataforma', x, z, { ancho: rng.pick([5, 6, 8]), fondo: rng.pick([5, 6, 8]), grosor: 1.2, borde: rng.pick(['#5fa04a', '#7bc96f', '#e9d8a6']), color: colores[k % colores.length] });
+        p.y = Math.max(1, y - Math.max(0, suelo));
+        if (k % 3 === 1) { const m = crearElemento(esc, 'moneda', x, z); m.y = p.y + 2; }
+      }
+      const meta = crearElemento(esc, 'meta', x + 8, z, { ancho: 8, alto: 5 });
+      const pf = crearElemento(esc, 'plataforma', x + 8, z, { ancho: 12, fondo: 12, grosor: 1.5, color: '#f1c40f', borde: '#ffffff' });
+      pf.y = Math.max(1, y - Math.max(0, alturaEn(esc, x + 8, z)));
+      meta.y = pf.y; meta.rotY = 90;
+      for (let k = 0; k < 6; k++) { const s = buscarSitio(esc, rng, (xx, zz) => alturaEn(esc, xx, zz) > 1.5); if (s) crearElemento(esc, 'bosque', s.x, s.z, { radio: 18, especie: 'palmera', densidad: 5 }); }
+    } });
+
+  registrarPlantilla({ id: 'islas', nombre: 'Archipiélago', icono: '🏝', desc: 'Islas tropicales con playas y palmeras.', tam: 2048, bioma: 'tropical',
+    aplicar(esc, rng) {
+      esc.terreno.agua = { activa: true, nivel: 0, color: null };
+      generarTerreno(esc, { tipo: 'archipielago', escala: 420, altura: 60, octavas: 6, base: -6 });
+      for (let k = 0; k < 16; k++) { const s = buscarSitio(esc, rng, (x, z) => { const h = alturaEn(esc, x, z); return h > 3 && h < 30; }); if (s) crearElemento(esc, 'bosque', s.x, s.z, { radio: rng.int(20, 60), especie: 'palmera', densidad: rng.range(2, 6) }); }
+    } });
+
+  registrarPlantilla({ id: 'montanas', nombre: 'Cordillera', icono: '🏔', desc: 'Montañas escarpadas con cumbres nevadas y un valle.', tam: 4096, bioma: 'templado',
+    aplicar(esc, rng) {
+      esc.terreno.agua = { activa: true, nivel: 8, color: null };
+      generarTerreno(esc, { tipo: 'montanas', escala: 1100, altura: 420, octavas: 7 });
+      for (let k = 0; k < 18; k++) { const s = buscarSitio(esc, rng, (x, z) => { const h = alturaEn(esc, x, z); return h > 12 && h < 150; }); if (s) crearElemento(esc, 'bosque', s.x, s.z, { radio: rng.int(60, 160), especie: rng.pick(['pino', 'abeto']), densidad: rng.range(1.5, 4) }); }
+    } });
+
+  registrarPlantilla({ id: 'desierto', nombre: 'Desierto', icono: '🏜', desc: 'Dunas, mesetas rocosas y un oasis.', tam: 2048, bioma: 'desierto',
+    aplicar(esc, rng) {
+      generarTerreno(esc, { tipo: 'dunas', escala: 500, altura: 50, octavas: 5 });
+      const oasis = buscarSitio(esc, rng, () => true);
+      if (oasis) { crearElemento(esc, 'lago', oasis.x, oasis.z, { radio: 35, color: '#2b8a8f' }); crearElemento(esc, 'bosque', oasis.x, oasis.z, { radio: 60, especie: 'palmera', densidad: 2 }); }
+      for (let k = 0; k < 12; k++) { const s = buscarSitio(esc, rng, () => true); if (s) crearElemento(esc, 'bosque', s.x, s.z, { radio: rng.int(30, 80), especie: 'cactus', densidad: 0.6, rocas: 0.4 }); }
+    } });
+
+  registrarPlantilla({ id: 'volcan', nombre: 'Volcán', icono: '🌋', desc: 'Isla volcánica con cráter, ceniza y roca.', tam: 2048, bioma: 'volcanico',
+    aplicar(esc) {
+      esc.terreno.agua = { activa: true, nivel: 3, color: null };
+      generarTerreno(esc, { tipo: 'crater', escala: 300, altura: 260, octavas: 5 });
+    } });
+
+  // Crea un escenario a partir de una plantilla
+  function crear(opts) {
+    opts = opts || {};
+    const pl = PLANTILLAS[opts.plantilla || 'vacio'] || PLANTILLAS.vacio;
+    const semilla = opts.semilla || Math.floor(Math.random() * 99999) + 1;
+    const esc = crearVacio(Object.assign({}, opts, { semilla, tam: opts.tam || pl.tam || 1024, bioma: opts.bioma || pl.bioma || 'templado', plantilla: pl.id }));
+    esc.terreno.gen.semilla = semilla;
+    pl.aplicar(esc, crearAzar(semilla * 31 + 7));
+    if (opts.nombre) esc.nombre = opts.nombre; else esc.nombre = pl.nombre + ' ' + semilla;
+    return esc;
+  }
+
+  // ---------------------------------------------------------------------------
+  // 9. Guardado: a objeto JSON y de vuelta
+  // ---------------------------------------------------------------------------
+  function serializar(esc, opts) {
+    opts = opts || {};
+    const o = Object.assign({}, esc);
+    o.terreno = Object.assign({}, esc.terreno, { alturas: f32ABase64(esc.terreno.alturas), materiales: bytesABase64(esc.terreno.materiales) });
+    o.caminos = copiaProfunda(esc.caminos);
+    o.elementos = copiaProfunda(esc.elementos);
+    o.glbs = {};
+    for (const [k, v] of Object.entries(esc.glbs || {})) {
+      o.glbs[k] = { nombre: v.nombre, tam: v.tam || 0 };
+      if (opts.modelos && opts.modelos[k]) o.glbs[k].bytes = opts.modelos[k];
+    }
+    o.actualizado = new Date().toISOString();
+    return o;
+  }
+
+  function deserializar(o) {
+    if (typeof o === 'string') o = JSON.parse(o);
+    if (!o || o.format !== FORMATO) throw new Error('No es un archivo de escenario (format = "' + FORMATO + '")');
+    if ((o.version | 0) > VERSION) throw new Error('El escenario es de una versión más nueva (' + o.version + ')');
+    const esc = crearVacio({ tam: o.terreno.tam, res: o.terreno.res, id: o.id });
+    Object.assign(esc, copiaProfunda(Object.assign({}, o, { terreno: undefined, glbs: undefined })));
+    const t = o.terreno;
+    Object.assign(esc.terreno, copiaProfunda(Object.assign({}, t, { alturas: undefined, materiales: undefined })));
+    const n = t.res * t.res;
+    esc.terreno.alturas = typeof t.alturas === 'string' ? base64AF32(t.alturas) : new Float32Array(t.alturas || n);
+    esc.terreno.materiales = typeof t.materiales === 'string' ? base64ABytes(t.materiales) : new Uint8Array(t.materiales || n);
+    if (esc.terreno.alturas.length !== n || esc.terreno.materiales.length !== n) throw new Error('El terreno no tiene el tamaño esperado');
+    esc.terreno.agua = Object.assign({ activa: false, nivel: 0, color: null }, t.agua || {});
+    esc.ambiente = Object.assign(crearVacio().ambiente, o.ambiente || {});
+    esc.enlaces = Object.assign({ rpgBase: RPG_BASE }, o.enlaces || {});
+    esc.caminos = o.caminos || []; esc.elementos = o.elementos || [];
+    esc.glbs = {};
+    const modelos = {};
+    for (const [k, v] of Object.entries(o.glbs || {})) { esc.glbs[k] = { nombre: v.nombre, tam: v.tam || 0 }; if (v.bytes) modelos[k] = v.bytes; }
+    // nextId seguro aunque el archivo venga editado a mano
+    let max = esc.nextId | 0;
+    for (const e of esc.elementos.concat(esc.caminos)) { const m = /_(\d+)$/.exec(e.id || ''); if (m) max = Math.max(max, +m[1] + 1); }
+    esc.nextId = max;
+    return { escenario: esc, modelos };
+  }
+
+  // Cambia la resolución o el tamaño del terreno remuestreando alturas y materiales
+  function remuestrear(esc, res, tam) {
+    const t = esc.terreno;
+    tam = tam || t.tam; res = res || t.res;
+    const viejo = { terreno: { tam: t.tam, res: t.res, alturas: t.alturas, materiales: t.materiales } };
+    const nh = new Float32Array(res * res), nm = new Uint8Array(res * res);
+    for (let j = 0; j < res; j++) for (let i = 0; i < res; i++) {
+      const x = -tam / 2 + i * tam / (res - 1), z = -tam / 2 + j * tam / (res - 1);
+      if (dentro(viejo, x, z)) {
+        nh[j * res + i] = alturaEn(viejo, x, z);
+        const g = aRejilla(viejo, x, z);
+        nm[j * res + i] = t.materiales[Math.round(g.gj) * t.res + Math.round(g.gi)];
+      } else nh[j * res + i] = alturaEn(viejo, x, z);
+    }
+    t.tam = tam; t.res = res; t.alturas = nh; t.materiales = nm;
+    return esc;
+  }
+
+  const API = {
+    FORMATO, VERSION, RPG_BASE, MATERIALES, BIOMAS, TIPOS, GRUPOS, PLANTILLAS, TIPOS_TERRENO, TIPOS_CAMINO, ESPECIES, ESTILOS_PUEBLO,
+    mulberry32, crearAzar, crearRuido, hashTexto, clamp, lerp,
+    registrarTipo, registrarPlantilla, leerRuta, escribirRuta, cfgPuebloPorDefecto, radioPueblo,
+    crearVacio, crear, generarTerreno, paso, idx, xDe, aRejilla, dentro, alturaEn, sueloEn, pendienteIdx, rangoAlturas,
+    materialAuto, materialEn, esculpir, pintar, allanarArea, caida,
+    crearCamino, muestrearCamino, rasante, ajustarTerrenoACamino, materialCamino, distanciaACamino,
+    crearElemento, buscarElemento, buscarCamino, quitar, duplicarElemento, radioElemento, prepararPueblo, copiaProfunda,
+    serializar, deserializar, remuestrear, bytesABase64, base64ABytes
+  };
+  if (typeof module !== 'undefined' && module.exports) module.exports = API;
+  else raiz.Escenario = API;
+})(typeof window !== 'undefined' ? window : globalThis);

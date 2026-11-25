@@ -1,0 +1,9 @@
+{
+  "name": "mundos-escenarios",
+  "private": true,
+  "description": "Creador y visor de escenarios 3D (lienzo para juegos de rally, RPG, plataformas…)",
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "catalogo": "node tools/generar-catalogo-rpg.mjs ../Creador-de-mundos-Rpg"
+  }
+}

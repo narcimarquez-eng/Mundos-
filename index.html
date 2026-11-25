@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <title>Creador de Escenarios</title>
+  <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/"}}</script>
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body class="editor">
+  <header id="barra">
+    <div class="logo">🌄 <span>Escenarios</span></div>
+    <input id="inp-nombre" class="nombre" title="Nombre del escenario" spellcheck="false">
+    <div class="grupo">
+      <button id="btn-sesiones" title="Escenarios guardados">📁<span> Escenarios</span></button>
+      <button id="btn-nuevo" title="Nuevo escenario">✨<span> Nuevo</span></button>
+      <button id="btn-deshacer" title="Deshacer (Ctrl+Z)">↶</button>
+      <button id="btn-rehacer" title="Rehacer (Ctrl+Y)">↷</button>
+      <button id="btn-exportar" class="no-movil" title="Exportar .escenario.json">💾<span> Exportar</span></button>
+      <button id="btn-importar" class="no-movil" title="Importar .escenario.json">📂<span> Importar</span></button>
+      <button id="btn-visor" class="primario" title="Abrir en el visor">▶<span> Visor</span></button>
+    </div>
+  </header>
+
+  <nav id="herramientas">
+    <button data-h="ver" title="Ver y seleccionar (1)">👆<small>Ver</small></button>
+    <button data-h="esculpir" title="Esculpir terreno (2)">⛰<small>Relieve</small></button>
+    <button data-h="pintar" title="Pintar suelo (3)">🖌<small>Pintar</small></button>
+    <button data-h="caminos" title="Caminos y pistas (4)">🛣<small>Caminos</small></button>
+    <button data-h="colocar" title="Colocar elementos (5)">➕<small>Colocar</small></button>
+    <button data-h="borrar" title="Borrar (6)">🗑<small>Borrar</small></button>
+  </nav>
+
+  <main id="vista">
+    <div id="lienzo"></div>
+    <div id="estado"><span id="est-pos">—</span><span id="est-carga" hidden></span><span id="est-msg"></span></div>
+    <div id="modos-transform" hidden>
+      <button data-m="translate" title="Mover (G)">✥</button>
+      <button data-m="rotate" title="Girar (R)">⟳</button>
+      <button data-m="scale" title="Escalar (S)">⤢</button>
+    </div>
+  </main>
+
+  <aside id="panel">
+    <div id="panel-asa" title="Mostrar u ocultar el panel"></div>
+    <div id="pestanas">
+      <button data-p="herramienta" class="activa">Herramienta</button>
+      <button data-p="seleccion">Selección</button>
+      <button data-p="escenario">Escenario</button>
+    </div>
+    <div id="panel-cuerpo"></div>
+  </aside>
+
+  <!-- Nuevo escenario -->
+  <dialog id="dlg-nuevo">
+    <form method="dialog">
+      <h2>✨ Nuevo escenario</h2>
+      <p class="ayuda">Elige un punto de partida. Todo se puede cambiar después: es un lienzo.</p>
+      <div id="plantillas" class="rejilla-plantillas"></div>
+      <div class="fila2">
+        <label>Nombre <input id="nv-nombre" placeholder="(automático)"></label>
+        <label>Semilla <input id="nv-semilla" type="number" min="1" max="99999" placeholder="al azar"></label>
+      </div>
+      <div class="fila2">
+        <label>Tamaño <select id="nv-tam">
+          <option value="">Según plantilla</option><option value="256">256 m</option><option value="512">512 m</option><option value="1024">1 km</option>
+          <option value="1536">1,5 km</option><option value="2048">2 km</option><option value="4096">4 km</option><option value="8192">8 km</option></select></label>
+        <label>Detalle del terreno <select id="nv-res">
+          <option value="129">Bajo (129²)</option><option value="257" selected>Medio (257²)</option><option value="513">Alto (513²)</option></select></label>
+      </div>
+      <menu><button value="cancelar">Cancelar</button><button id="nv-crear" value="crear" class="primario">Crear</button></menu>
+    </form>
+  </dialog>
+
+  <!-- Escenarios guardados -->
+  <dialog id="dlg-sesiones">
+    <form method="dialog">
+      <h2>📁 Escenarios guardados</h2>
+      <p class="ayuda">Se guardan solos en este navegador. Exporta un <code>.escenario.json</code> para copias de seguridad o para usarlo en un juego.</p>
+      <div id="lista-sesiones" class="lista"></div>
+      <menu><button type="button" id="ses-importar">📂 Importar…</button><button type="button" id="ses-exportar">💾 Exportar el actual</button><button value="cerrar">Cerrar</button></menu>
+    </form>
+  </dialog>
+
+  <!-- Selector de modelo GLB -->
+  <dialog id="dlg-modelo">
+    <form method="dialog">
+      <h2>🧊 Elegir modelo</h2>
+      <div class="tabs-mini" id="mod-tabs">
+        <button type="button" data-t="locales" class="activa">Importados</button>
+        <button type="button" data-t="rpg">Biblioteca RPG</button>
+        <button type="button" data-t="url">Dirección web</button>
+      </div>
+      <div id="mod-locales" class="mod-pag">
+        <button type="button" id="mod-importar" class="primario">📥 Importar archivos .glb…</button>
+        <p class="ayuda">Exportados desde el estudio de armaduras, el editor de enemigos, Blender… Se guardan en el navegador y se incluyen al exportar con modelos.</p>
+        <div id="mod-lista-locales" class="lista"></div>
+      </div>
+      <div id="mod-rpg" class="mod-pag" hidden>
+        <div class="fila2"><input id="mod-buscar" placeholder="Buscar…"><select id="mod-grupo"></select></div>
+        <p class="ayuda">Modelos del repositorio Creador-de-mundos-Rpg. Se cargan desde la dirección configurada en Escenario → Enlaces.</p>
+        <div id="mod-lista-rpg" class="lista"></div>
+      </div>
+      <div id="mod-url" class="mod-pag" hidden>
+        <label>Dirección del .glb <input id="mod-url-inp" placeholder="https://…/modelo.glb"></label>
+        <button type="button" id="mod-url-ok" class="primario">Usar</button>
+      </div>
+      <menu><button value="cancelar">Cancelar</button></menu>
+    </form>
+  </dialog>
+
+  <input type="file" id="fichero-escenario" accept=".json,application/json" hidden>
+  <input type="file" id="fichero-glb" accept=".glb,model/gltf-binary" multiple hidden>
+
+  <script src="js/escenario-core.js"></script>
+  <script src="js/catalogo-rpg.js"></script>
+  <script src="js/almacen.js"></script>
+  <script type="module" src="js/editor.js"></script>
+</body>
+</html>

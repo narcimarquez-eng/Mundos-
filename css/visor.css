@@ -1,0 +1,16 @@
+body.visor #lienzo { position: fixed; top: var(--barra); left: 0; right: 0; bottom: 0; }
+body.visor #barra .derecha { margin-left: 0; }
+body.visor #modos { margin-left: auto; }
+#ayuda-modo { position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); background: rgba(10, 14, 20, 0.7); padding: 6px 12px; border-radius: 10px; font-size: 12.5px; color: #cfd8e3; pointer-events: none; text-align: center; max-width: calc(100vw - 24px); }
+#carga { position: fixed; right: 12px; bottom: 14px; background: rgba(10, 14, 20, 0.8); padding: 6px 10px; border-radius: 8px; font-size: 12px; }
+#ajustes { position: fixed; top: calc(var(--barra) + 8px); right: 8px; width: 290px; max-height: calc(100vh - var(--barra) - 16px); overflow-y: auto; background: rgba(26, 32, 41, 0.95); border: 1px solid var(--borde); border-radius: 12px; padding: 4px 12px 12px; z-index: 15; }
+#ajustes h3 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--tenue); margin: 12px 0 4px; }
+#joystick { position: fixed; left: 24px; bottom: 30px; width: 120px; height: 120px; border-radius: 50%; background: rgba(255, 255, 255, 0.08); border: 2px solid rgba(255, 255, 255, 0.25); touch-action: none; z-index: 12; }
+#palanca { position: absolute; left: 50%; top: 50%; width: 52px; height: 52px; margin: -26px 0 0 -26px; border-radius: 50%; background: rgba(255, 255, 255, 0.35); }
+#botones-altura { position: fixed; right: 18px; bottom: 40px; display: flex; flex-direction: column; gap: 10px; z-index: 12; }
+#botones-altura button { width: 56px; height: 56px; border-radius: 50%; font-size: 20px; background: rgba(255, 255, 255, 0.12); touch-action: none; }
+@media (max-width: 760px) {
+  #ayuda-modo { top: calc(var(--barra) + 8px); bottom: auto; }
+  #barra .logo #titulo { display: none; }
+  #ajustes { left: 8px; width: auto; }
+}
