@@ -270,6 +270,8 @@
         gen: Object.assign({ tipo: 'plano', escala: 300, altura: 40, octavas: 5, base: 0, semilla: opts.semilla || 1 }, opts.gen || {}),
         alturas: new Float32Array(res * res),
         materiales: new Uint8Array(res * res),
+        vegetacion: new Uint8Array(res * res), // hierba, trigo, flores… pintados (ver codVegetacion); 0 = automático
+        hierbaAuto: 0.6,                        // densidad de la hierba automática sobre los suelos de hierba (0 = sin)
         agua: { activa: false, nivel: 0, color: null },
         bordes: 'cortado' // 'cortado' (se ve el borde) o 'infinito' (suelo que se extiende)
       },
@@ -451,6 +453,72 @@
       t.alturas[k] = lerp(t.alturas[k], objetivo, w);
     }
     return { region: reg, altura: objetivo };
+  }
+
+  // ---------------------------------------------------------------------------
+  // 5b. Vegetación baja: hierba, trigo, flores, hierba alta y bambú (se dibuja con js/pradera.js)
+  // ---------------------------------------------------------------------------
+  // Cada punto de la rejilla guarda un byte: 0 = automático (hierba según el suelo), 255 = nada (borrado a mano),
+  // 1–250 = tipo pintado y densidad: 1 + tipo·50 + (densidad − 1), con densidad 1–50.
+  const PRADERA = [['hierba', 'Hierba'], ['trigo', 'Trigo'], ['flores', 'Flores'], ['hierbaAlta', 'Hierba alta'], ['bambu', 'Bambú']];
+  const VEG_NADA = 255;
+  function codVegetacion(tipo, densidad) {
+    const t = typeof tipo === 'number' ? tipo : PRADERA.findIndex(p => p[0] === tipo);
+    if (t < 0) return 0;
+    return 1 + t * 50 + (clamp(Math.round(densidad * 50), 1, 50) - 1);
+  }
+  function decodVegetacion(v) {
+    if (v === 0) return null;
+    if (v === VEG_NADA) return { tipo: null, d: 0 };
+    v -= 1;
+    return { tipo: PRADERA[Math.floor(v / 50)][0], d: (v % 50 + 1) / 50 };
+  }
+  const SUELOS_CON_HIERBA = { 1: 1, 2: 0.8, 10: 0.7 }; // hierba, hierba seca, musgo → cuánta hierba automática
+  const ruidosVeg = new WeakMap();
+  // Qué crece en un punto: { tipo, d (0–1), tinte (material del suelo) } o null
+  function vegetacionEn(esc, x, z) {
+    const t = esc.terreno, r = t.res;
+    if (!dentro(esc, x, z)) return null;
+    const g = aRejilla(esc, x, z), i = Math.round(g.gi), j = Math.round(g.gj), k = j * r + i;
+    const mat = t.materiales[k] || 0;
+    const pint = t.vegetacion ? decodVegetacion(t.vegetacion[k]) : null;
+    const agua = t.agua && t.agua.activa ? t.agua.nivel : -Infinity;
+    if (pint) {
+      if (!pint.tipo) return null;
+      if (alturaEn(esc, x, z) < agua + 0.2) return null;
+      return { tipo: pint.tipo, d: pint.d, suelo: mat || materialAuto(esc, i, j) };
+    }
+    if (!(t.hierbaAuto > 0)) return null;
+    const suelo = mat || materialAuto(esc, i, j);
+    const f = SUELOS_CON_HIERBA[suelo];
+    if (!f) return null;
+    if (pendienteIdx(esc, i, j) > 0.75) return null;
+    if (alturaEn(esc, x, z) < agua + 0.4) return null;
+    let N = ruidosVeg.get(t);
+    if (!N || N.semilla !== t.gen.semilla) { N = crearRuido((t.gen.semilla || 1) * 13 + 5); N.semilla = t.gen.semilla; ruidosVeg.set(t, N); }
+    const manchas = N.fbm(x / 45, z / 45, 3) * 0.5 + 0.5;               // claros y zonas tupidas
+    const prado = N.ruido(x / 90 + 40, z / 90 - 17);                   // praderas con flores
+    const alta = N.ruido(x / 70 - 9, z / 70 + 23);                     // matorral de hierba alta
+    const d = clamp(t.hierbaAuto * f * (0.35 + manchas * 0.9), 0, 1);
+    const tipo = prado > 0.5 ? 'flores' : alta > 0.5 && suelo !== 2 ? 'hierbaAlta' : 'hierba';
+    return { tipo, d: tipo === 'hierbaAlta' ? d * 0.7 : d, suelo };
+  }
+  // op: { x, z, radio, tipo: 'hierba'|'trigo'|'flores'|'hierbaAlta'|'bambu'|'auto'|'nada', densidad (0–1) }
+  function pintarVegetacion(esc, op) {
+    const t = esc.terreno, r = t.res, p = paso(esc);
+    if (!t.vegetacion) t.vegetacion = new Uint8Array(r * r);
+    const reg = regionPincel(esc, op.x, op.z, op.radio);
+    const rnd = mulberry32(Math.floor((op.x * 29 + op.z * 13) * 100) ^ 0x51ed27);
+    for (let j = reg.j0; j <= reg.j1; j++) for (let i = reg.i0; i <= reg.i1; i++) {
+      const w = caida(Math.hypot(-t.tam / 2 + i * p - op.x, -t.tam / 2 + j * p - op.z), op.radio);
+      if (w <= 0) continue;
+      if (!(w > 0.45 || rnd() < w * 2)) continue;
+      const k = j * r + i;
+      if (op.tipo === 'auto') t.vegetacion[k] = 0;
+      else if (op.tipo === 'nada') t.vegetacion[k] = VEG_NADA;
+      else t.vegetacion[k] = codVegetacion(op.tipo, (op.densidad == null ? 0.7 : op.densidad) * Math.min(1, 0.4 + w));
+    }
+    return reg;
   }
 
   // ---------------------------------------------------------------------------
@@ -779,7 +847,8 @@
   function serializar(esc, opts) {
     opts = opts || {};
     const o = Object.assign({}, esc);
-    o.terreno = Object.assign({}, esc.terreno, { alturas: f32ABase64(esc.terreno.alturas), materiales: bytesABase64(esc.terreno.materiales) });
+    o.terreno = Object.assign({}, esc.terreno, { alturas: f32ABase64(esc.terreno.alturas), materiales: bytesABase64(esc.terreno.materiales),
+      vegetacion: esc.terreno.vegetacion ? bytesABase64(esc.terreno.vegetacion) : undefined });
     o.caminos = copiaProfunda(esc.caminos);
     o.elementos = copiaProfunda(esc.elementos);
     o.glbs = {};
@@ -798,11 +867,12 @@
     const esc = crearVacio({ tam: o.terreno.tam, res: o.terreno.res, id: o.id });
     Object.assign(esc, copiaProfunda(Object.assign({}, o, { terreno: undefined, glbs: undefined })));
     const t = o.terreno;
-    Object.assign(esc.terreno, copiaProfunda(Object.assign({}, t, { alturas: undefined, materiales: undefined })));
+    Object.assign(esc.terreno, copiaProfunda(Object.assign({}, t, { alturas: undefined, materiales: undefined, vegetacion: undefined })));
     const n = t.res * t.res;
     esc.terreno.alturas = typeof t.alturas === 'string' ? base64AF32(t.alturas) : new Float32Array(t.alturas || n);
     esc.terreno.materiales = typeof t.materiales === 'string' ? base64ABytes(t.materiales) : new Uint8Array(t.materiales || n);
-    if (esc.terreno.alturas.length !== n || esc.terreno.materiales.length !== n) throw new Error('El terreno no tiene el tamaño esperado');
+    esc.terreno.vegetacion = typeof t.vegetacion === 'string' ? base64ABytes(t.vegetacion) : new Uint8Array(n);
+    if (esc.terreno.alturas.length !== n || esc.terreno.materiales.length !== n || esc.terreno.vegetacion.length !== n) throw new Error('El terreno no tiene el tamaño esperado');
     esc.terreno.agua = Object.assign({ activa: false, nivel: 0, color: null }, t.agua || {});
     esc.ambiente = Object.assign(crearVacio().ambiente, o.ambiente || {});
     esc.enlaces = Object.assign({ rpgBase: RPG_BASE }, o.enlaces || {});
@@ -822,16 +892,18 @@
     const t = esc.terreno;
     tam = tam || t.tam; res = res || t.res;
     const viejo = { terreno: { tam: t.tam, res: t.res, alturas: t.alturas, materiales: t.materiales } };
-    const nh = new Float32Array(res * res), nm = new Uint8Array(res * res);
+    const nh = new Float32Array(res * res), nm = new Uint8Array(res * res), nv = new Uint8Array(res * res);
+    const vv = t.vegetacion || new Uint8Array(t.res * t.res);
     for (let j = 0; j < res; j++) for (let i = 0; i < res; i++) {
       const x = -tam / 2 + i * tam / (res - 1), z = -tam / 2 + j * tam / (res - 1);
       if (dentro(viejo, x, z)) {
         nh[j * res + i] = alturaEn(viejo, x, z);
         const g = aRejilla(viejo, x, z);
         nm[j * res + i] = t.materiales[Math.round(g.gj) * t.res + Math.round(g.gi)];
+        nv[j * res + i] = vv[Math.round(g.gj) * t.res + Math.round(g.gi)];
       } else nh[j * res + i] = alturaEn(viejo, x, z);
     }
-    t.tam = tam; t.res = res; t.alturas = nh; t.materiales = nm;
+    t.tam = tam; t.res = res; t.alturas = nh; t.materiales = nm; t.vegetacion = nv;
     return esc;
   }
 
@@ -841,6 +913,7 @@
     registrarTipo, registrarPlantilla, leerRuta, escribirRuta, cfgPuebloPorDefecto, radioPueblo,
     crearVacio, crear, generarTerreno, paso, idx, xDe, aRejilla, dentro, alturaEn, sueloEn, pendienteIdx, rangoAlturas,
     materialAuto, materialEn, esculpir, pintar, allanarArea, caida,
+    PRADERA, VEG_NADA, codVegetacion, decodVegetacion, vegetacionEn, pintarVegetacion,
     crearCamino, muestrearCamino, rasante, ajustarTerrenoACamino, materialCamino, distanciaACamino,
     crearElemento, buscarElemento, buscarCamino, quitar, duplicarElemento, radioElemento, prepararPueblo, copiaProfunda,
     serializar, deserializar, remuestrear, bytesABase64, base64ABytes

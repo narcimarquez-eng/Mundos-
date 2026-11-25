@@ -9,6 +9,7 @@ import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
 import { Vegetacion } from './vegetacion.js';
+import { Pradera } from './pradera.js';
 
 const E = window.Escenario;
 const DEG = Math.PI / 180;
@@ -181,6 +182,7 @@ function texturaTexto(texto, fondo, color) {
   return t;
 }
 
+const COLOR_VEG = { hierba: new THREE.Color('#8fe04a'), trigo: new THREE.Color('#f0c43a'), flores: new THREE.Color('#ef5fae'), hierbaAlta: new THREE.Color('#2f8f3a'), bambu: new THREE.Color('#b6ef6a') };
 const COLOR_AREA = { pueblo: '#f5c542', zona: '#e74c3c', bosque: '#2ecc71', rocas: '#95a5a6', lago: '#3498db' };
 const COLOR_ZONA = { caza: '#e67e22', elite: '#9b59b6', jefe: '#c0392b', pvp: '#e84393', segura: '#2ecc71', arena: '#3498db' };
 
@@ -526,6 +528,8 @@ export class Escena3D {
     this.loader.setDRACOLoader(draco); this.loader.setMeshoptDecoder(MeshoptDecoder);
     this.vegetacion = new Vegetacion({ renderer: this.renderer, loader: this.loader, calidad: this.o.calidad, especies: E.ARBOLES_GLB });
     this.raiz.add(this.vegetacion.grupo);
+    this.pradera = new Pradera({ renderer: this.renderer, calidad: this.o.calidad });
+    this.raiz.add(this.pradera.grupo);
     this._crearAmbiente();
     this.texSuelo = texturaRuido(256, 200, 55, 11);
   }
@@ -597,6 +601,7 @@ export class Escena3D {
   // --- Construcción completa ---
   construir(esc) {
     this.esc = esc;
+    this.pradera.usar(esc, this);
     this._muestrasCaminos = null;
     this.construirTerreno();
     this.construirAgua();
@@ -649,9 +654,15 @@ export class Escena3D {
       const mancha = N.fbm(x / 90, z / 90, 3);
       const v = (0.94 + ((Math.imul(k, 2654435761) >>> 0) % 1000) / 1000 * 0.12) * (0.92 + mancha * 0.16);
       const calido = Math.max(0, N.ruido(x / 260 + 7, z / 260 - 3)) * 0.12;
-      col.setXYZ(k, (c.r + calido * 0.5) * v, (c.g + calido * 0.25) * v, c.b * v);
+      let cr = (c.r + calido * 0.5) * v, cg = (c.g + calido * 0.25) * v, cb = c.b * v;
+      if (this.verVegetacion) { // en el editor, al pintar vegetación: color de lo que crece encima
+        const veg = E.vegetacionEn(esc, x, z);
+        if (veg) { const cv = COLOR_VEG[veg.tipo]; const f = 0.25 + 0.6 * veg.d; cr += (cv.r - cr) * f; cg += (cv.g - cg) * f; cb += (cv.b - cb) * f; }
+      }
+      col.setXYZ(k, cr, cg, cb);
     }
     pos.needsUpdate = true; col.needsUpdate = true;
+    if (this.pradera) this.pradera.invalidar(i0 === 0 && j0 === 0 && i1 === r - 1 && j1 === r - 1 ? null : reg);
     if (!soloColor) {
       this.terreno.geometry.computeVertexNormals();
       this.terreno.geometry.computeBoundingSphere(); this.terreno.geometry.computeBoundingBox();
@@ -706,6 +717,7 @@ export class Escena3D {
   }
   construirCaminos() {
     this._muestrasCaminos = null;
+    this.pradera.invalidar();
     for (const o of this.gCaminos.children.slice()) { this.gCaminos.remove(o); o.geometry && o.geometry.dispose(); }
     for (const c of this.esc.caminos) this.gCaminos.add(this._mallaCamino(c));
   }
@@ -759,6 +771,7 @@ export class Escena3D {
   }
   _baseY(el) { return E.alturaEn(this.esc, el.x, el.z) + (el.y || 0); }
   reconstruirElementos() {
+    this.pradera.invalidar();
     for (const id of Array.from(this.objetos.keys())) this.quitarElemento(id);
     for (const el of this.esc.elementos) this.actualizarElemento(el);
   }
@@ -850,7 +863,7 @@ export class Escena3D {
   }
   actualizar(dt, camara) {
     this.reloj += dt;
-    if (camara) this.vegetacion.actualizar(camara, dt);
+    if (camara) { this.vegetacion.actualizar(camara, dt); this.pradera.actualizar(camara, dt); }
     if (this.cielo.material.uniforms.time) this.cielo.material.uniforms.time.value = this.reloj;
     for (const m of this.mezcladores) m.update(dt);
     this.gElementos.traverse(o => { if (o.userData.girar) o.rotation.y += dt * 2; });

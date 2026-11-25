@@ -28,6 +28,8 @@ Unidades en **metros**. Ejes como en three.js: `x` y `z` en el suelo, `y` hacia 
 | `res` | Puntos por lado de la rejilla (65, 129, 257 o 513). Distancia entre puntos: `tam / (res − 1)`. |
 | `alturas` | `Float32Array` de `res × res` en **base64** (little-endian). Índice `j·res + i`; el punto `(i, j)` está en `x = −tam/2 + i·paso`, `z = −tam/2 + j·paso`. |
 | `materiales` | `Uint8Array` de `res × res` en base64: material pintado en cada punto (0 = automático). Ver la tabla. |
+| `vegetacion` | `Uint8Array` de `res × res` en base64 (opcional): vegetación baja pintada. 0 = automática, 255 = nada, 1–250 = `1 + tipo·50 + (densidad − 1)` con `tipo` 0 hierba, 1 trigo, 2 flores, 3 hierba alta, 4 bambú y `densidad` 1–50 (÷ 50). `Escenario.vegetacionEn(esc, x, z)` da lo que crece en un punto. |
+| `hierbaAuto` | Densidad (0–1) de la hierba automática sobre los suelos de hierba, hierba seca y musgo. 0 = sin hierba automática. |
 | `bioma` | `templado`, `desierto`, `tropical`, `nevado`, `volcanico` u `otono`: decide los materiales automáticos y el color del agua. |
 | `gen` | Parámetros con los que se generó: `{ tipo, escala, altura, octavas, base, semilla }`. `tipo`: `plano`, `colinas`, `montanas`, `isla`, `archipielago`, `valle`, `dunas`, `mesetas`, `canon`, `crater`. |
 | `agua` | `{ activa, nivel, color }`: plano de agua a esa altura (`color` null = el del bioma). |

@@ -143,3 +143,38 @@ test('árboles con modelo: especies, archivos preparados y plantillas que los us
   assert.ok(rally.elementos.some(e => e.tipo === 'bosque' && (E.ARBOLES_GLB[e.props.especie] || e.props.especie === 'mixto')));
   assert.strictEqual(E.crearElemento(rally, 'arbol', 0, 0).props.especie, 'liquidambar');
 });
+
+test('vegetación: pintar, automática, codificación y guardado', () => {
+  for (let t = 0; t < E.PRADERA.length; t++) for (const d of [0.02, 0.5, 1]) {
+    const v = E.codVegetacion(t, d);
+    assert.ok(v >= 1 && v <= 250);
+    const r = E.decodVegetacion(v);
+    assert.strictEqual(r.tipo, E.PRADERA[t][0]);
+    assert.ok(Math.abs(r.d - Math.max(0.02, d)) < 0.021);
+  }
+  assert.strictEqual(E.decodVegetacion(0), null);
+  assert.strictEqual(E.decodVegetacion(E.VEG_NADA).tipo, null);
+
+  const e = E.crearVacio({ tam: 200, res: 129 }); // plano de hierba
+  e.terreno.hierbaAuto = 0.8;
+  let conHierba = 0;
+  for (let k = 0; k < 200; k++) { const v = E.vegetacionEn(e, -90 + k * 0.9, 13); if (v) { conHierba++; assert.ok(['hierba', 'flores', 'hierbaAlta'].includes(v.tipo)); } }
+  assert.ok(conHierba > 150, 'la hierba automática cubre el prado');
+  e.terreno.hierbaAuto = 0;
+  assert.strictEqual(E.vegetacionEn(e, 0, 0), null, 'sin hierba automática');
+  E.pintarVegetacion(e, { x: 0, z: 0, radio: 10, tipo: 'trigo', densidad: 0.9 });
+  assert.strictEqual(E.vegetacionEn(e, 0, 0).tipo, 'trigo');
+  assert.ok(E.vegetacionEn(e, 0, 0).d > 0.8);
+  e.terreno.hierbaAuto = 1;
+  E.pintarVegetacion(e, { x: 50, z: 50, radio: 8, tipo: 'nada' });
+  assert.strictEqual(E.vegetacionEn(e, 50, 50), null, 'borrado a mano gana a la automática');
+  e.terreno.materiales.fill(4); // roca: sin hierba automática
+  assert.strictEqual(E.vegetacionEn(e, -60, -60), null);
+  const b = E.deserializar(JSON.stringify(E.serializar(e))).escenario;
+  assert.deepStrictEqual(Array.from(b.terreno.vegetacion), Array.from(e.terreno.vegetacion));
+  // archivos de antes, sin vegetación: se cargan con todo en automático
+  const viejo = E.serializar(E.crearVacio({ tam: 100, res: 65 })); delete viejo.terreno.vegetacion; delete viejo.terreno.hierbaAuto;
+  const c = E.deserializar(JSON.stringify(viejo)).escenario;
+  assert.strictEqual(c.terreno.vegetacion.length, 65 * 65);
+  assert.ok(c.terreno.hierbaAuto > 0);
+});

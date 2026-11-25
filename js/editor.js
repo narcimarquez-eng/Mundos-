@@ -18,7 +18,7 @@ let herramienta = 'ver';
 let pestana = 'herramienta';
 let sel = null;                 // id de elemento o camino seleccionado
 let caminoActivo = null;        // id del camino que se edita con la herramienta Caminos
-const pincel = { modo: 'subir', radio: 25, fuerza: 0.6, material: 1, objetivo: 0 };
+const pincel = { modo: 'subir', radio: 25, fuerza: 0.6, material: 1, objetivo: 0, capa: 'suelo', veg: 'hierba', densidad: 0.7 };
 const colocar = { tipo: 'arbol', props: {} };
 const nuevoCamino = { tipo: 'tierra', ancho: 6, bordes: false };
 let modoTransform = 'translate';
@@ -102,11 +102,12 @@ async function guardarYa() {
 function instantanea() {
   const t = esc.terreno;
   const resto = Object.assign({}, esc, { terreno: Object.assign({}, t, { alturas: null, materiales: null }) });
-  return { json: JSON.stringify(resto), alturas: t.alturas.slice(), materiales: t.materiales.slice() };
+  resto.terreno.vegetacion = null;
+  return { json: JSON.stringify(resto), alturas: t.alturas.slice(), materiales: t.materiales.slice(), vegetacion: t.vegetacion.slice() };
 }
 function restaurar(s) {
   const o = JSON.parse(s.json);
-  o.terreno.alturas = s.alturas.slice(); o.terreno.materiales = s.materiales.slice();
+  o.terreno.alturas = s.alturas.slice(); o.terreno.materiales = s.materiales.slice(); o.terreno.vegetacion = s.vegetacion.slice();
   esc = o;
   tc.detach();
   if (sel && !E.buscarElemento(esc, sel) && !E.buscarCamino(esc, sel)) sel = null;
@@ -233,6 +234,7 @@ function usarHerramienta(h) {
   if (h !== 'ver') { tc.detach(); $('modos-transform').hidden = true; }
   else if (sel) seleccionar(sel);
   dibujarAsas();
+  verVegetacion();
   mostrarPestana('herramienta');
 }
 document.querySelectorAll('#herramientas button').forEach(b => b.addEventListener('click', () => usarHerramienta(b.dataset.h)));
@@ -313,6 +315,9 @@ function aplicarPincel(dt) {
     const escalaF = pincel.modo === 'subir' || pincel.modo === 'bajar' || pincel.modo === 'ruido' ? pincel.fuerza * Math.max(4, pincel.radio * 0.35) * dt * 2.5 : Math.min(1, pincel.fuerza * dt * 6);
     reg = E.esculpir(esc, { modo: pincel.modo, x: p.x, z: p.z, radio: pincel.radio, fuerza: escalaF, objetivo: trazo.objetivo, semilla: 7 });
     escena.actualizarTerreno(reg);
+  } else if (pincel.capa === 'vegetacion') {
+    reg = E.pintarVegetacion(esc, { x: p.x, z: p.z, radio: pincel.radio, tipo: pincel.veg, densidad: pincel.densidad });
+    escena.actualizarTerreno(reg, true);
   } else {
     reg = E.pintar(esc, { x: p.x, z: p.z, radio: pincel.radio, material: pincel.material });
     escena.actualizarTerreno(reg, true);
@@ -601,12 +606,34 @@ function panelEsculpir() {
   cuerpo.append(ayuda('Mantén pulsado y arrastra sobre el terreno. Botón derecho (o dos dedos) gira la vista.'));
 }
 function panelPintar() {
-  cuerpo.append(titulo('🖌 Pintar el suelo'),
+  cuerpo.append(titulo('🖌 Pintar'),
+    segmentado([['suelo', '🟫 Suelo'], ['vegetacion', '🌾 Hierba y flores']], pincel.capa, v => { pincel.capa = v; verVegetacion(); renderPanel(); }));
+  if (pincel.capa === 'vegetacion') return panelPintarVegetacion();
+  cuerpo.append(
     h('div', { class: 'mat' }, E.MATERIALES.map(m => h('button', { class: m.id === pincel.material ? 'activa' : '', on: { click: () => { pincel.material = m.id; renderPanel(); } } },
       h('i', { style: m.id === 0 ? 'background: linear-gradient(135deg,#5b8a39,#d9c58d 50%,#7c7873)' : 'background:' + m.color }), m.nombre))),
     deslizador('Radio', pincel.radio, 1, Math.max(60, Math.round(esc.terreno.tam / 6)), 1, v => { pincel.radio = v; }, v => v + ' m'),
     ayuda('«Automático» devuelve el suelo a su color según altura, pendiente y bioma.'),
     botones(boton('Todo a automático', () => { if (!confirm('¿Borrar toda la pintura del suelo?')) return; puntoDeshacer(); esc.terreno.materiales.fill(0); escena.actualizarTerreno(null, true); programarGuardado(); })));
+}
+const COLOR_VEG_UI = { hierba: '#8fe04a', trigo: '#f0c43a', flores: '#ef5fae', hierbaAlta: '#2f8f3a', bambu: '#b6ef6a', auto: 'linear-gradient(135deg,#8fe04a,#ef5fae)', nada: 'repeating-linear-gradient(45deg,#555 0 4px,#333 4px 8px)' };
+function panelPintarVegetacion() {
+  const ops = E.PRADERA.concat([['auto', 'Automático'], ['nada', 'Sin vegetación']]);
+  cuerpo.append(
+    h('div', { class: 'mat' }, ops.map(([id, n]) => h('button', { class: id === pincel.veg ? 'activa' : '', on: { click: () => { pincel.veg = id; renderPanel(); } } },
+      h('i', { style: 'background:' + COLOR_VEG_UI[id] }), n))),
+    deslizador('Radio', pincel.radio, 1, Math.max(60, Math.round(esc.terreno.tam / 6)), 1, v => { pincel.radio = v; }, v => v + ' m'));
+  if (!['auto', 'nada'].includes(pincel.veg)) cuerpo.append(deslizador('Densidad', pincel.densidad, 0.05, 1, 0.05, v => { pincel.densidad = v; }, v => Math.round(v * 100) + '%'));
+  cuerpo.append(
+    ayuda('Mientras pintas, el terreno se tiñe con lo que crece encima. Las matas se ven al acercar la cámara (a menos de ~75 m); en el visor, a pie o en recorrido.'),
+    ayuda('«Automático» deja que crezca hierba sola sobre los suelos de hierba, hierba seca y musgo, con claros, praderas de flores y matorral alto. «Sin vegetación» la quita.'),
+    deslizador('Hierba automática en todo el escenario', esc.terreno.hierbaAuto || 0, 0, 1, 0.05, (v, fin) => { esc.terreno.hierbaAuto = v; if (fin) { escena.actualizarTerreno(null, true); programarGuardado(); } }, v => v ? Math.round(v * 100) + '%' : 'sin hierba'),
+    botones(boton('Borrar lo pintado', () => { if (!confirm('¿Quitar toda la vegetación pintada (vuelve a la automática)?')) return; puntoDeshacer(); esc.terreno.vegetacion.fill(0); escena.actualizarTerreno(null, true); programarGuardado(); })));
+}
+function verVegetacion() {
+  if (!esc) return;
+  const v = herramienta === 'pintar' && pincel.capa === 'vegetacion';
+  if (escena.verVegetacion !== v) { escena.verVegetacion = v; escena.actualizarTerreno(null, true); }
 }
 function panelCaminos() {
   const c = caminoActivo && E.buscarCamino(esc, caminoActivo);

@@ -11,6 +11,7 @@ Viene de la parte de edición del [Creador de Mundos RPG](https://github.com/nar
 | `js/escenario-core.js` | Núcleo sin interfaz (terreno, pinceles, caminos, tipos de elemento, plantillas, guardado). Funciona en el navegador y en Node: el juego puede cargarlo para leer el escenario (`alturaEn`, `muestrearCamino`…). |
 | `js/escena-3d.js` | Dibujo 3D con three.js, compartido por editor y visor. Un dibujo por tipo de elemento (`registrarDibujo`). |
 | `js/vegetacion.js` | Árboles con modelo `.glb`: instancias, niveles de detalle, impostores y viento. |
+| `js/pradera.js`, `js/pradera-atlas.js` | Hierba, trigo, flores, hierba alta y bambú alrededor de la cámara (el atlas viene del Creador RPG). |
 | `glb/arboles/`, `modelos-fuente/arboles/`, `tools/preparar-arboles.mjs` | Árboles preparados para el visor, sus originales y la herramienta que los prepara. |
 | `js/almacen.js` | Guardado en el navegador (IndexedDB): escenarios y modelos importados. |
 | `js/catalogo-rpg.js` | Lista de los 342 modelos `.glb` del Creador RPG (enemigos, cabañas, piezas, muelles, puentes, mazmorras). Se regenera con `npm run catalogo` (necesita el otro repositorio al lado). |
@@ -47,6 +48,13 @@ Todos los árboles de todos los bosques se dibujan por instancias, con tres nive
 Los que quedan fuera de la vista no se dibujan. Las copas se mueven con el viento y se iluminan como un volumen (normales de copa y algo de translucidez). En la calidad baja y alta del visor las distancias cambian (`DISTANCIAS` en `js/vegetacion.js`), y en ⚙ Ajustes se pueden desactivar los árboles con modelo para usar los sencillos.
 
 **Añadir un árbol nuevo:** deja el `.glb` en `modelos-fuente/arboles/` (dos mallas: tronco opaco y copa con transparencia recortada, como los de Blender que ya hay), ejecuta `cd tools && npm install && node preparar-arboles.mjs` y añádelo a `ARBOLES_GLB` en `js/escenario-core.js`. La herramienta pasa las texturas a WebP de 1024 px, comprime la geometría y crea la versión media (12,6 MB de los cuatro originales → 3,8 MB).
+
+### Hierba, trigo y flores
+El suelo se cubre de matas de hierba, trigo, flores, hierba alta o bambú, dibujadas con los atlas del Creador RPG (`js/pradera-atlas.js`, texturas pintadas en un lienzo, sin archivos) y movidas por el viento.
+- **Automática:** sobre los suelos de hierba, hierba seca y musgo crece hierba sola, con claros, praderas de flores y matorral alto. Su densidad se cambia en *🖌 Pintar → Hierba y flores* («Hierba automática en todo el escenario»; 0 la quita).
+- **Pintada:** con el mismo pincel se pinta hierba, trigo, flores, hierba alta o bambú con su densidad, se vuelve a «Automático» o se pone «Sin vegetación». Mientras se pinta, el terreno se tiñe con lo que crece encima.
+- No crece en caminos, lagos, agua, pendientes fuertes ni en la plaza de los pueblos.
+- Se dibuja solo alrededor de la cámara (calidad media: matas detalladas hasta 28 m y sencillas hasta 75 m), en teselas de 16 m que se calculan una vez. Desde muy arriba no se dibuja. En el visor se puede desactivar en ⚙ Ajustes.
 
 ### Modelos GLB
 **➕ Colocar → Modelo GLB → Elegir modelo**:
