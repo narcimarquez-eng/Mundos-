@@ -122,3 +122,24 @@ test('allanarArea deja el centro a la altura pedida', () => {
   assert.ok(Math.abs(E.alturaEn(e, 0, 0) - 25) < 1e-3);
   assert.ok(Math.abs(E.alturaEn(e, 40, 0) - 25) < 1e-3);
 });
+
+test('árboles con modelo: especies, archivos preparados y plantillas que los usan', () => {
+  const fs = require('node:fs'), path = require('node:path');
+  const ids = Object.keys(E.ARBOLES_GLB);
+  assert.deepStrictEqual(ids.sort(), ['liquidambar', 'palmera_datilera', 'pino_pinonero', 'pinsapo']);
+  const indice = JSON.parse(fs.readFileSync(path.join(__dirname, '../glb/arboles/indice.json'), 'utf8'));
+  for (const id of ids) {
+    const def = E.ARBOLES_GLB[id];
+    assert.ok(fs.existsSync(path.join(__dirname, '..', def.archivo)), 'existe ' + def.archivo);
+    assert.ok(E.ESPECIES.some(e => e[0] === id), id + ' se puede elegir');
+    assert.ok(E.TIPOS.arbol.campos[0].op.some(e => e[0] === id), id + ' en el árbol suelto');
+    assert.ok(def.sencillo && E.ESPECIES.some(e => e[0] === def.sencillo), id + ' tiene sustituto sencillo');
+    const i = indice.find(x => x.id === id);
+    assert.ok(i && i.tris.medio < i.tris.cerca, id + ': la versión media tiene menos triángulos');
+    assert.ok(Math.abs(i.alto - def.alto) < 1, id + ': altura del catálogo parecida a la del modelo');
+  }
+  for (const lista of Object.values(E.MEZCLA_BIOMA)) for (const sp of lista) assert.ok(E.ESPECIES.some(e => e[0] === sp), 'mezcla con especie conocida: ' + sp);
+  const rally = E.crear({ plantilla: 'rally', semilla: 3, res: 129 });
+  assert.ok(rally.elementos.some(e => e.tipo === 'bosque' && (E.ARBOLES_GLB[e.props.especie] || e.props.especie === 'mixto')));
+  assert.strictEqual(E.crearElemento(rally, 'arbol', 0, 0).props.especie, 'liquidambar');
+});

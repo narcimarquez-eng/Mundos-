@@ -8,7 +8,7 @@ const $ = id => document.getElementById(id);
 const DEG = Math.PI / 180;
 
 let esc = null, escena = null, modo = 'orbita';
-const prefs = { calidad: 'media', etiquetas: true, areas: false, fov: 60, vel: 22, camRec: 'persecucion', ciclo: false };
+const prefs = { realistas: true, calidad: 'media', etiquetas: true, areas: false, fov: 60, vel: 22, camRec: 'persecucion', ciclo: false };
 try { Object.assign(prefs, JSON.parse(localStorage.getItem('escenarios.visor') || '{}')); } catch (e) { /* nada */ }
 const guardarPrefs = () => { try { localStorage.setItem('escenarios.visor', JSON.stringify(prefs)); } catch (e) { /* nada */ } };
 
@@ -31,7 +31,7 @@ new ResizeObserver(redimensionar).observe(lienzo);
 function crearEscena() {
   if (escena) { scene.clear(); }
   escena = new Escena3D({
-    scene, renderer, editor: false, calidad: prefs.calidad, etiquetas: prefs.etiquetas, mostrarAreas: prefs.areas,
+    scene, renderer, editor: false, calidad: prefs.calidad, arbolesRealistas: prefs.realistas, etiquetas: prefs.etiquetas, mostrarAreas: prefs.areas,
     cargarModeloLocal: id => A.cargarModelo(id),
     alCargar: n => { $('carga').hidden = !n; $('carga').textContent = '⏳ Cargando ' + n + ' modelo' + (n === 1 ? '' : 's') + '…'; }
   });
@@ -207,7 +207,7 @@ function bucle(t) {
     else if (modo === 'recorrido') actualizarRecorrido(dt);
     else actualizarVuelo(dt);
     if (prefs.ciclo) { esc.ambiente.hora = (esc.ambiente.hora + dt * 0.25) % 24; escena.setHora(esc.ambiente.hora); $('inp-hora').value = esc.ambiente.hora; $('val-hora').textContent = fmtHora(esc.ambiente.hora); }
-    escena.actualizar(dt);
+    escena.actualizar(dt, camara);
     tFoco += dt;
     if (tFoco > 0.25) {
       tFoco = 0;
@@ -232,6 +232,7 @@ $('chk-ciclo').addEventListener('change', e => { prefs.ciclo = e.target.checked;
 $('inp-niebla').addEventListener('input', e => { esc.ambiente.niebla = +e.target.value; escena.setNiebla(esc.ambiente.niebla); $('val-niebla').textContent = Math.round(esc.ambiente.niebla * 100) + '%'; });
 $('chk-etiquetas').addEventListener('change', e => { prefs.etiquetas = e.target.checked; guardarPrefs(); escena.o.etiquetas = prefs.etiquetas; escena.reconstruirElementos(); });
 $('chk-areas').addEventListener('change', e => { prefs.areas = e.target.checked; guardarPrefs(); escena.o.mostrarAreas = prefs.areas; escena.reconstruirElementos(); escena.setMostrarAreas(prefs.areas); });
+$('chk-realistas').addEventListener('change', e => { prefs.realistas = e.target.checked; guardarPrefs(); escena.o.arbolesRealistas = prefs.realistas; escena.reconstruirElementos(); });
 $('sel-calidad').addEventListener('change', e => { prefs.calidad = e.target.value; guardarPrefs(); location.reload(); });
 $('inp-fov').addEventListener('input', e => { prefs.fov = +e.target.value; camara.fov = prefs.fov; camara.updateProjectionMatrix(); $('val-fov').textContent = prefs.fov + '°'; guardarPrefs(); });
 function cambiarVel(v) { prefs.vel = THREE.MathUtils.clamp(v, 2, 80); $('inp-vel').value = prefs.vel; $('val-vel').textContent = prefs.vel + ' m/s (' + Math.round(prefs.vel * 3.6) + ' km/h)'; guardarPrefs(); }
@@ -243,7 +244,7 @@ function rellenarAjustes() {
   $('inp-hora').value = esc.ambiente.hora; $('val-hora').textContent = fmtHora(esc.ambiente.hora);
   const nb = esc.ambiente.nubes == null ? 0.4 : esc.ambiente.nubes; $('inp-nubes').value = nb; $('val-nubes').textContent = Math.round(nb * 100) + '%';
   $('inp-niebla').value = esc.ambiente.niebla; $('val-niebla').textContent = Math.round(esc.ambiente.niebla * 100) + '%';
-  $('chk-ciclo').checked = prefs.ciclo; $('chk-etiquetas').checked = prefs.etiquetas; $('chk-areas').checked = prefs.areas;
+  $('chk-ciclo').checked = prefs.ciclo; $('chk-realistas').checked = prefs.realistas; $('chk-etiquetas').checked = prefs.etiquetas; $('chk-areas').checked = prefs.areas;
   $('sel-calidad').value = prefs.calidad; $('inp-fov').value = prefs.fov; $('val-fov').textContent = prefs.fov + '°';
   $('sel-camara-rec').value = prefs.camRec; cambiarVel(prefs.vel);
   const caminos = esc.caminos.filter(c => c.puntos.length >= 2);
@@ -341,3 +342,6 @@ function mostrar(nuevo) {
   if (datos) mostrar(E.deserializar(datos).escenario);
   else { mostrar(E.crear({ plantilla: 'rally', semilla: 4242, nombre: 'Circuito de ejemplo' })); aviso('No hay escenarios guardados: se muestra uno de ejemplo'); }
 })();
+
+// Acceso para depurar desde la consola
+window.__visor = { get esc() { return esc; }, get escena() { return escena; }, camara, orbita, usarModo, mirada };

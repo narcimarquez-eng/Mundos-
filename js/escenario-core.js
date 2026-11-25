@@ -159,15 +159,31 @@
   registrarTipo({ id: 'muro', nombre: 'Muro', icono: '🧱', grupo: 'basicos', props: { largo: 20, alto: 4, grosor: 1.2, color: '#8d8478' },
     campos: [NUM('largo', 'Largo', 0.5, 500), NUM('alto', 'Alto', 0.1, 100), NUM('grosor', 'Grosor', 0.1, 20, 0.1), COLOR('color')] });
 
-  const ESPECIES = [['roble', 'Roble'], ['pino', 'Pino'], ['abeto', 'Abeto'], ['palmera', 'Palmera'], ['abedul', 'Abedul'], ['seco', 'Árbol seco'], ['cactus', 'Cactus'], ['mixto', 'Mixto']];
-  registrarTipo({ id: 'arbol', nombre: 'Árbol', icono: '🌳', grupo: 'naturaleza', props: { especie: 'roble', alto: 9 },
-    campos: [{ k: 'especie', n: 'Especie', t: 'sel', op: ESPECIES.filter(e => e[0] !== 'mixto') }, NUM('alto', 'Altura', 1, 60)] });
+  // Árboles con modelo .glb (glb/arboles/, preparados con tools/preparar-arboles.mjs). alto: altura del modelo en m.
+  // sencillo: especie dibujada por código que los sustituye si se desactivan los árboles realistas.
+  const ARBOLES_GLB = {
+    liquidambar: { nombre: 'Liquidámbar', archivo: 'glb/arboles/liquidambar.glb', alto: 17.7, sencillo: 'roble' },
+    pinsapo: { nombre: 'Pinsapo', archivo: 'glb/arboles/pinsapo.glb', alto: 19.3, sencillo: 'abeto' },
+    pino_pinonero: { nombre: 'Pino piñonero', archivo: 'glb/arboles/pino_pinonero.glb', alto: 13.7, sencillo: 'pino' },
+    palmera_datilera: { nombre: 'Palmera datilera', archivo: 'glb/arboles/palmera_datilera.glb', alto: 13.6, sencillo: 'palmera' }
+  };
+  function registrarArbolGlb(id, def) { ARBOLES_GLB[id] = def; ESPECIES.splice(ESPECIES.length - 1, 0, [id, def.nombre + ' (modelo)']); }
+  // Mezcla de especies de «mixto» según el bioma: realistas y, si están desactivadas, sencillas
+  const MEZCLA_BIOMA = {
+    templado: ['liquidambar', 'pinsapo', 'pino_pinonero'], desierto: ['palmera_datilera', 'cactus', 'seco'], tropical: ['palmera_datilera'],
+    nevado: ['pinsapo', 'abeto'], volcanico: ['seco', 'pino_pinonero'], otono: ['liquidambar', 'abedul', 'seco']
+  };
+  const ESPECIES = Object.entries(ARBOLES_GLB).map(([k, v]) => [k, v.nombre + ' (modelo)'])
+    .concat([['roble', 'Roble sencillo'], ['pino', 'Pino sencillo'], ['abeto', 'Abeto sencillo'], ['palmera', 'Palmera sencilla'], ['abedul', 'Abedul sencillo'], ['seco', 'Árbol seco'], ['cactus', 'Cactus'], ['mixto', 'Mezcla según el bioma']]);
+  registrarTipo({ id: 'arbol', nombre: 'Árbol', icono: '🌳', grupo: 'naturaleza', props: { especie: 'liquidambar', alto: 0 },
+    campos: [{ k: 'especie', n: 'Especie', t: 'sel', op: ESPECIES.filter(e => e[0] !== 'mixto') }, NUM('alto', 'Altura (m, 0 = la del modelo)', 0, 60)] });
   registrarTipo({ id: 'roca', nombre: 'Roca', icono: '🪨', grupo: 'naturaleza', props: { tam: 3, color: '#7d7a74' },
     campos: [NUM('tam', 'Tamaño', 0.2, 100), COLOR('color')] });
   registrarTipo({ id: 'bosque', nombre: 'Bosque (área)', icono: '🌲', grupo: 'naturaleza', forma: 'area', radioDefecto: 40,
-    props: { radio: 40, especie: 'mixto', densidad: 6, altoMin: 6, altoMax: 13, rocas: 0.15, semilla: 1 },
+    props: { radio: 40, especie: 'mixto', densidad: 6, tamano: 1, altoMin: 6, altoMax: 13, rocas: 0.15, semilla: 1 },
     campos: [NUM('radio', 'Radio', 5, 2000, 1), { k: 'especie', n: 'Especie', t: 'sel', op: ESPECIES }, NUM('densidad', 'Árboles cada 1000 m²', 0.2, 40, 0.2),
-      NUM('altoMin', 'Altura mínima', 1, 60), NUM('altoMax', 'Altura máxima', 1, 60), NUM('rocas', 'Rocas (proporción)', 0, 1, 0.05), NUM('semilla', 'Semilla', 1, 99999, 1)] });
+      NUM('tamano', 'Tamaño de los árboles con modelo (×)', 0.3, 3, 0.05),
+      NUM('altoMin', 'Altura mínima (sencillos)', 1, 60), NUM('altoMax', 'Altura máxima (sencillos)', 1, 60), NUM('rocas', 'Rocas (proporción)', 0, 1, 0.05), NUM('semilla', 'Semilla', 1, 99999, 1)] });
   registrarTipo({ id: 'rocas', nombre: 'Pedregal (área)', icono: '⛰', grupo: 'naturaleza', forma: 'area', radioDefecto: 25,
     props: { radio: 25, cantidad: 30, tamMin: 0.6, tamMax: 4, color: '#7d7a74', semilla: 1 },
     campos: [NUM('radio', 'Radio', 2, 1000, 1), NUM('cantidad', 'Cantidad', 1, 600, 1), NUM('tamMin', 'Tamaño mínimo', 0.1, 50, 0.1), NUM('tamMax', 'Tamaño máximo', 0.1, 80, 0.1), COLOR('color'), NUM('semilla', 'Semilla', 1, 99999, 1)] });
@@ -684,7 +700,7 @@
       for (let k = 1; k <= 5; k++) { const p = enD(total * k / 6); const cp = crearElemento(esc, 'checkpoint', p.x, p.z, { orden: k, ancho: 15, nombre: 'Control ' + k }); cp.rotY = p.rot; }
       for (let k = 0; k < 14; k++) {
         const s = buscarSitio(esc, rng, (x, z) => distanciaACamino(c, x, z, mu) > 45);
-        if (s) crearElemento(esc, 'bosque', s.x, s.z, { radio: rng.int(30, 80), densidad: rng.range(4, 10), especie: rng.pick(['pino', 'abeto', 'mixto']) });
+        if (s) crearElemento(esc, 'bosque', s.x, s.z, { radio: rng.int(30, 80), densidad: rng.range(4, 10), especie: rng.pick(['pinsapo', 'pino_pinonero', 'mixto']) });
       }
       for (let k = 0; k < 8; k++) {
         const s = buscarSitio(esc, rng, (x, z) => { const d = distanciaACamino(c, x, z, mu); return d > 12 && d < 30; });
@@ -714,28 +730,28 @@
       const pf = crearElemento(esc, 'plataforma', x + 8, z, { ancho: 12, fondo: 12, grosor: 1.5, color: '#f1c40f', borde: '#ffffff' });
       pf.y = Math.max(1, y - Math.max(0, alturaEn(esc, x + 8, z)));
       meta.y = pf.y; meta.rotY = 90;
-      for (let k = 0; k < 6; k++) { const s = buscarSitio(esc, rng, (xx, zz) => alturaEn(esc, xx, zz) > 1.5); if (s) crearElemento(esc, 'bosque', s.x, s.z, { radio: 18, especie: 'palmera', densidad: 5 }); }
+      for (let k = 0; k < 6; k++) { const s = buscarSitio(esc, rng, (xx, zz) => alturaEn(esc, xx, zz) > 1.5); if (s) crearElemento(esc, 'bosque', s.x, s.z, { radio: 18, especie: 'palmera_datilera', densidad: 5 }); }
     } });
 
   registrarPlantilla({ id: 'islas', nombre: 'Archipiélago', icono: '🏝', desc: 'Islas tropicales con playas y palmeras.', tam: 2048, bioma: 'tropical',
     aplicar(esc, rng) {
       esc.terreno.agua = { activa: true, nivel: 0, color: null };
       generarTerreno(esc, { tipo: 'archipielago', escala: 420, altura: 60, octavas: 6, base: -6 });
-      for (let k = 0; k < 16; k++) { const s = buscarSitio(esc, rng, (x, z) => { const h = alturaEn(esc, x, z); return h > 3 && h < 30; }); if (s) crearElemento(esc, 'bosque', s.x, s.z, { radio: rng.int(20, 60), especie: 'palmera', densidad: rng.range(2, 6) }); }
+      for (let k = 0; k < 16; k++) { const s = buscarSitio(esc, rng, (x, z) => { const h = alturaEn(esc, x, z); return h > 3 && h < 30; }); if (s) crearElemento(esc, 'bosque', s.x, s.z, { radio: rng.int(20, 60), especie: 'palmera_datilera', densidad: rng.range(2, 6) }); }
     } });
 
   registrarPlantilla({ id: 'montanas', nombre: 'Cordillera', icono: '🏔', desc: 'Montañas escarpadas con cumbres nevadas y un valle.', tam: 4096, bioma: 'templado',
     aplicar(esc, rng) {
       esc.terreno.agua = { activa: true, nivel: 8, color: null };
       generarTerreno(esc, { tipo: 'montanas', escala: 1100, altura: 420, octavas: 7 });
-      for (let k = 0; k < 18; k++) { const s = buscarSitio(esc, rng, (x, z) => { const h = alturaEn(esc, x, z); return h > 12 && h < 150; }); if (s) crearElemento(esc, 'bosque', s.x, s.z, { radio: rng.int(60, 160), especie: rng.pick(['pino', 'abeto']), densidad: rng.range(1.5, 4) }); }
+      for (let k = 0; k < 18; k++) { const s = buscarSitio(esc, rng, (x, z) => { const h = alturaEn(esc, x, z); return h > 12 && h < 150; }); if (s) crearElemento(esc, 'bosque', s.x, s.z, { radio: rng.int(60, 160), especie: rng.pick(['pinsapo', 'pino_pinonero']), densidad: rng.range(1.5, 4) }); }
     } });
 
   registrarPlantilla({ id: 'desierto', nombre: 'Desierto', icono: '🏜', desc: 'Dunas, mesetas rocosas y un oasis.', tam: 2048, bioma: 'desierto',
     aplicar(esc, rng) {
       generarTerreno(esc, { tipo: 'dunas', escala: 500, altura: 50, octavas: 5 });
       const oasis = buscarSitio(esc, rng, () => true);
-      if (oasis) { crearElemento(esc, 'lago', oasis.x, oasis.z, { radio: 35, color: '#2b8a8f' }); crearElemento(esc, 'bosque', oasis.x, oasis.z, { radio: 60, especie: 'palmera', densidad: 2 }); }
+      if (oasis) { crearElemento(esc, 'lago', oasis.x, oasis.z, { radio: 35, color: '#2b8a8f' }); crearElemento(esc, 'bosque', oasis.x, oasis.z, { radio: 60, especie: 'palmera_datilera', densidad: 2 }); }
       for (let k = 0; k < 12; k++) { const s = buscarSitio(esc, rng, () => true); if (s) crearElemento(esc, 'bosque', s.x, s.z, { radio: rng.int(30, 80), especie: 'cactus', densidad: 0.6, rocas: 0.4 }); }
     } });
 
@@ -820,7 +836,7 @@
   }
 
   const API = {
-    FORMATO, VERSION, RPG_BASE, MATERIALES, BIOMAS, TIPOS, GRUPOS, PLANTILLAS, TIPOS_TERRENO, TIPOS_CAMINO, ESPECIES, ESTILOS_PUEBLO,
+    FORMATO, VERSION, RPG_BASE, MATERIALES, BIOMAS, TIPOS, GRUPOS, PLANTILLAS, TIPOS_TERRENO, TIPOS_CAMINO, ESPECIES, ESTILOS_PUEBLO, ARBOLES_GLB, MEZCLA_BIOMA, registrarArbolGlb,
     mulberry32, crearAzar, crearRuido, hashTexto, clamp, lerp,
     registrarTipo, registrarPlantilla, leerRuta, escribirRuta, cfgPuebloPorDefecto, radioPueblo,
     crearVacio, crear, generarTerreno, paso, idx, xDe, aRejilla, dentro, alturaEn, sueloEn, pendienteIdx, rangoAlturas,

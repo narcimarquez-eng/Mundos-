@@ -8,6 +8,7 @@ import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
+import { Vegetacion } from './vegetacion.js';
 
 const E = window.Escenario;
 const DEG = Math.PI / 180;
@@ -82,7 +83,16 @@ function geoArbol(especie) {
   }
   return (GEO_ARBOL[especie] = unir(partes));
 }
-const ESPECIES_MIXTO = { templado: ['roble', 'pino', 'abedul'], desierto: ['cactus', 'palmera', 'seco'], tropical: ['palmera', 'roble'], nevado: ['abeto', 'pino'], volcanico: ['seco', 'abeto'], otono: ['roble', 'abedul', 'seco'] };
+// Especie que se dibuja: las de modelo .glb pasan a su versión sencilla si los árboles realistas están desactivados
+function especieReal(sp, ctx) { const g = E.ARBOLES_GLB[sp]; return g && !ctx.realistas ? g.sencillo : sp; }
+function mezcla(ctx) { return (E.MEZCLA_BIOMA[ctx.esc.terreno.bioma] || E.MEZCLA_BIOMA.templado).map(sp => especieReal(sp, ctx)); }
+// Árbol con modelo: lo dibuja la vegetación por instancias; el elemento solo lleva un cilindro invisible para poder tocarlo
+function arbolesGlb(el, ctx, lista) {
+  const g = new THREE.Group();
+  ctx.vegetacion.registrar(el.id, lista);
+  g.userData.alQuitar = () => ctx.vegetacion.quitar(el.id);
+  return g;
+}
 
 // Rocas: 4 variantes de radio 1
 const GEO_ROCA = [];
@@ -201,7 +211,17 @@ registrarDibujo('rampa', (el) => { const p = el.props; return malla(geoRampa(p.a
 registrarDibujo('cilindro', (el) => { const p = el.props; const m = malla(new THREE.CylinderGeometry(p.radio, p.radio, p.alto, 24), mat(p.color)); m.position.y = p.alto / 2; return m; });
 registrarDibujo('esfera', (el) => { const p = el.props; const m = malla(new THREE.SphereGeometry(p.radio, 24, 16), mat(p.color)); m.position.y = p.radio; return m; });
 registrarDibujo('muro', (el) => { const p = el.props; const m = malla(new THREE.BoxGeometry(p.largo, p.alto, p.grosor), mat(p.color)); m.position.y = p.alto / 2 - 0.3; return m; });
-registrarDibujo('arbol', (el) => { const m = malla(geoArbol(el.props.especie), MAT_VC); m.scale.setScalar((el.props.alto || 9) / 10); return m; });
+registrarDibujo('arbol', (el, ctx) => {
+  const sp = especieReal(el.props.especie, ctx), glb = E.ARBOLES_GLB[sp];
+  if (!glb) { const m = malla(geoArbol(sp), MAT_VC); m.scale.setScalar((el.props.alto || 9) / 10); return m; }
+  const datos = () => [{ e: sp, x: el.x, y: E.alturaEn(ctx.esc, el.x, el.z) + (el.y || 0) - 0.15, z: el.z, alto: (el.props.alto || glb.alto) * (el.escala || 1), rot: (el.rotY || 0) * DEG, tinte: 1 }];
+  const g = arbolesGlb(el, ctx, datos());
+  const alto = (el.props.alto || glb.alto);
+  const toque = new THREE.Mesh(new THREE.CylinderGeometry(alto * 0.22, alto * 0.22, alto, 8).translate(0, alto / 2, 0), new THREE.MeshBasicMaterial({ visible: false }));
+  g.add(toque);
+  g.userData.alColocar = () => ctx.vegetacion.registrar(el.id, datos());
+  return g;
+});
 registrarDibujo('roca', (el, ctx) => {
   const m = malla(geoRoca(E.hashTexto(el.id)), new THREE.MeshStandardMaterial({ vertexColors: true, color: el.props.color, roughness: 0.95, flatShading: true }));
   m.scale.setScalar(el.props.tam); m.rotation.y = (E.hashTexto(el.id) % 360) * DEG; void ctx; return m;
@@ -229,7 +249,7 @@ registrarDibujo('bosque', (el, ctx) => {
   const n = Math.min(4000, Math.round(area / 1000 * p.densidad));
   return dispersar(el, ctx, n, (pts, rng) => {
     const g = new THREE.Group();
-    const especies = p.especie === 'mixto' ? (ESPECIES_MIXTO[ctx.esc.terreno.bioma] || ESPECIES_MIXTO.templado) : [p.especie];
+    const especies = p.especie === 'mixto' ? mezcla(ctx) : [especieReal(p.especie, ctx)];
     const porEspecie = {};
     const rocas = [];
     for (const q of pts) {
@@ -238,7 +258,13 @@ registrarDibujo('bosque', (el, ctx) => {
       (porEspecie[sp] = porEspecie[sp] || []).push(q);
     }
     const m4 = new THREE.Matrix4(), q4 = new THREE.Quaternion(), s3 = new THREE.Vector3(), p3 = new THREE.Vector3(), ejeY = new THREE.Vector3(0, 1, 0), col = new THREE.Color();
+    const conModelo = [];
     for (const [sp, lista] of Object.entries(porEspecie)) {
+      const glb = E.ARBOLES_GLB[sp];
+      if (glb) {
+        for (const q of lista) conModelo.push({ e: sp, x: q.x, y: q.y - 0.15, z: q.z, alto: glb.alto * (p.tamano || 1) * (0.78 + q.s * 0.44), rot: q.rot, tinte: 0.85 + q.v * 0.3 });
+        continue;
+      }
       const im = new THREE.InstancedMesh(geoArbol(sp), MAT_VC, lista.length);
       lista.forEach((q, k) => {
         const alto = p.altoMin + (p.altoMax - p.altoMin) * q.s;
@@ -250,6 +276,7 @@ registrarDibujo('bosque', (el, ctx) => {
       g.add(im);
     }
     if (rocas.length) g.add(instanciasRocas(rocas, el, ctx, 0.5, 2.2, '#7d7a74'));
+    if (conModelo.length) { ctx.vegetacion.registrar(el.id, conModelo); g.userData.alQuitar = () => ctx.vegetacion.quitar(el.id); }
     g.userData.sinEscala = true;
     return g;
   });
@@ -497,6 +524,8 @@ export class Escena3D {
     this.loader = new GLTFLoader();
     const draco = new DRACOLoader(); draco.setDecoderPath('https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/libs/draco/gltf/');
     this.loader.setDRACOLoader(draco); this.loader.setMeshoptDecoder(MeshoptDecoder);
+    this.vegetacion = new Vegetacion({ renderer: this.renderer, loader: this.loader, calidad: this.o.calidad, especies: E.ARBOLES_GLB });
+    this.raiz.add(this.vegetacion.grupo);
     this._crearAmbiente();
     this.texSuelo = texturaRuido(256, 200, 55, 11);
   }
@@ -532,6 +561,7 @@ export class Escena3D {
     this.sol.color.set('#fff4e0').lerp(new THREE.Color('#ff9a52'), ocaso);
     if (dia < 0.05) this.sol.color.set('#8fa6d8');
     this.hemi.intensity = 0.2 + 0.8 * dia;
+    this.vegetacion.setLuz(0.12 + 0.88 * dia);
     this.hemi.color.set('#cfe3ff').lerp(new THREE.Color('#33406a'), 1 - dia);
     const niebla = new THREE.Color('#bcd3e6').lerp(new THREE.Color('#e6a77a'), ocaso).lerp(new THREE.Color('#0c1220'), 1 - dia);
     this.scene.fog.color.copy(niebla);
@@ -723,6 +753,7 @@ export class Escena3D {
       cargarModelo: ruta => self.cargarModelo(ruta),
       animar: (obj, anims) => self._animar(obj, anims),
       muestrasCaminos: () => self.muestrasCaminos(),
+      vegetacion: this.vegetacion, realistas: this.o.arbolesRealistas !== false,
       alCambiar: () => self.o.alCambiar && self.o.alCambiar()
     };
   }
@@ -759,11 +790,13 @@ export class Escena3D {
     const area = def.forma === 'area';
     g.rotation.set(0, area ? 0 : (el.rotY || 0) * DEG, 0);
     g.scale.setScalar(area ? 1 : (el.escala || 1));
+    g.traverse(o => { if (o.userData.alColocar) o.userData.alColocar(); });
   }
   quitarElemento(id) {
     const g = this.objetos.get(id);
     if (!g) return;
     this.gElementos.remove(g);
+    g.traverse(o => { if (o.userData.alQuitar) o.userData.alQuitar(); });
     if (g.userData.aro) { this.gAreas.remove(g.userData.aro); g.userData.aro.geometry.dispose(); }
     this.mezcladores = this.mezcladores.filter(m => { let dentroG = false; m.raiz.traverseAncestors(a => { if (a === g) dentroG = true; }); return !dentroG; });
     g.traverse(o => { if (o.geometry && !Object.values(GEO_ARBOL).includes(o.geometry) && !GEO_ROCA.includes(o.geometry)) o.geometry.dispose(); });
@@ -815,8 +848,9 @@ export class Escena3D {
     mx.raiz = obj;
     this.mezcladores.push(mx);
   }
-  actualizar(dt) {
+  actualizar(dt, camara) {
     this.reloj += dt;
+    if (camara) this.vegetacion.actualizar(camara, dt);
     if (this.cielo.material.uniforms.time) this.cielo.material.uniforms.time.value = this.reloj;
     for (const m of this.mezcladores) m.update(dt);
     this.gElementos.traverse(o => { if (o.userData.girar) o.rotation.y += dt * 2; });

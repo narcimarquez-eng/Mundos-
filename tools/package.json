@@ -1,0 +1,13 @@
+{
+  "name": "mundos-herramientas",
+  "private": true,
+  "type": "module",
+  "description": "Herramientas para preparar modelos (no hacen falta para usar la app)",
+  "dependencies": {
+    "@gltf-transform/core": "^4.1.0",
+    "@gltf-transform/extensions": "^4.1.0",
+    "@gltf-transform/functions": "^4.1.0",
+    "meshoptimizer": "^0.22.0",
+    "sharp": "^0.33.5"
+  }
+}

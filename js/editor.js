@@ -212,6 +212,7 @@ tc.addEventListener('objectChange', () => {
     el.escala = Math.max(0.01, Math.round(s * 100) / 100);
     g.scale.setScalar(el.escala);
   }
+  if (el.tipo === 'arbol') escena.colocar(el, g); // los árboles con modelo se mueven con la vegetación
   if (g.userData.aro) { g.userData.aro.visible = false; }
   marcarSeleccion();
   actualizarCamposPosicion();
@@ -352,12 +353,14 @@ function clic(ev, boton) {
     if (hit) return seleccionar(hit.id);
     const cam = raycaster.intersectObjects(escena.gCaminos.children, false)[0];
     if (cam) return seleccionar(cam.object.userData.caminoId);
-    return seleccionar(null);
+    const area = p && areaEn(p.x, p.z);
+    return seleccionar(area ? area.id : null);
   }
   if (herramienta === 'borrar') {
     const hit = escena.rayoElemento(rayoDesde(ev));
     const cam = !hit && raycaster.intersectObjects(escena.gCaminos.children, false)[0];
-    const id = hit ? hit.id : cam ? cam.object.userData.caminoId : null;
+    const area = !hit && !cam && p && areaEn(p.x, p.z, ['bosque', 'rocas', 'lago']);
+    const id = hit ? hit.id : cam ? cam.object.userData.caminoId : area ? area.id : null;
     if (!id) return;
     puntoDeshacer();
     borrar(id);
@@ -400,6 +403,17 @@ function clic(ev, boton) {
     if (tramo >= 0) c.puntos.splice(tramo + 1, 0, pt); else c.puntos.push(pt);
     terminarEdicionCamino();
   }
+}
+// Área (bosque, zona, pueblo…) que contiene el punto: la más pequeña. Los árboles de un bosque no se tocan uno a uno.
+function areaEn(x, z, tipos) {
+  let mejor = null;
+  for (const el of esc.elementos) {
+    const def = E.TIPOS[el.tipo];
+    if (!def || def.forma !== 'area' || (tipos && !tipos.includes(el.tipo))) continue;
+    const r = el.props.radio || 0;
+    if (Math.hypot(el.x - x, el.z - z) <= r && (!mejor || r < mejor.props.radio)) mejor = el;
+  }
+  return mejor;
 }
 function tramoCercano(c, p) {
   let best = -1, bd = Infinity;
@@ -464,7 +478,7 @@ function bucle(t) {
     if (tc.object && !tc.object.parent) { const g = sel && escena.objetos.get(sel); if (g && herramienta === 'ver') tc.attach(g); else tc.detach(); }
     aplicarPincel(dt);
     orbita.update();
-    escena.actualizar(dt);
+    escena.actualizar(dt, camara);
     tFoco += dt;
     if (tFoco > 0.4) {
       tFoco = 0;

@@ -61,9 +61,9 @@ Los puntos son de control: la línea real es una curva Catmull-Rom que pasa por 
 | `rampa` | punto | `ancho, alto, largo, color` (sube hacia +z) |
 | `cilindro`, `esfera` | punto | `radio, (alto), color` |
 | `muro` | punto | `largo, alto, grosor, color` (a lo largo de x) |
-| `arbol` | punto | `especie` (roble, pino, abeto, palmera, abedul, seco, cactus), `alto` |
+| `arbol` | punto | `especie`: con modelo (`liquidambar`, `pinsapo`, `pino_pinonero`, `palmera_datilera`) o sencilla (`roble`, `pino`, `abeto`, `palmera`, `abedul`, `seco`, `cactus`); `alto` en m (0 = la del modelo) |
 | `roca` | punto | `tam, color` |
-| `bosque` | área | `radio, especie` (o `mixto` según el bioma), `densidad` (árboles cada 1000 m²), `altoMin, altoMax, rocas, semilla` |
+| `bosque` | área | `radio, especie` (o `mixto`: mezcla según el bioma), `densidad` (árboles cada 1000 m²), `tamano` (× la altura de los árboles con modelo), `altoMin, altoMax` (árboles sencillos), `rocas, semilla` |
 | `rocas` | área | `radio, cantidad, tamMin, tamMax, color, semilla` |
 | `lago` | área | `radio, nivel` (altura del agua sobre el suelo del centro), `color` |
 | `inicio` | punto | `color`. Salida del jugador, mirando a `rotY`. |

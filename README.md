@@ -10,6 +10,8 @@ Viene de la parte de edición del [Creador de Mundos RPG](https://github.com/nar
 | `visor.html` + `js/visor.js` | **Visor**: recorre el escenario con cámara libre, a pie o siguiendo un camino. |
 | `js/escenario-core.js` | Núcleo sin interfaz (terreno, pinceles, caminos, tipos de elemento, plantillas, guardado). Funciona en el navegador y en Node: el juego puede cargarlo para leer el escenario (`alturaEn`, `muestrearCamino`…). |
 | `js/escena-3d.js` | Dibujo 3D con three.js, compartido por editor y visor. Un dibujo por tipo de elemento (`registrarDibujo`). |
+| `js/vegetacion.js` | Árboles con modelo `.glb`: instancias, niveles de detalle, impostores y viento. |
+| `glb/arboles/`, `modelos-fuente/arboles/`, `tools/preparar-arboles.mjs` | Árboles preparados para el visor, sus originales y la herramienta que los prepara. |
 | `js/almacen.js` | Guardado en el navegador (IndexedDB): escenarios y modelos importados. |
 | `js/catalogo-rpg.js` | Lista de los 342 modelos `.glb` del Creador RPG (enemigos, cabañas, piezas, muelles, puentes, mazmorras). Se regenera con `npm run catalogo` (necesita el otro repositorio al lado). |
 | `docs/FORMATO-ESCENARIO.md` | El archivo `.escenario.json` y cómo añadir tipos nuevos. |
@@ -30,6 +32,21 @@ Abre `index.html` servido por web (GitHub Pages o `npx serve .`); usa módulos y
 3. **Panel derecho**: *Herramienta* (opciones de la herramienta), *Selección* (propiedades del elemento) y *Escenario* (hora, niebla, bioma, agua, generar terreno, tamaño, enlaces).
 4. **Guardado**: automático en el navegador. **📁 Escenarios** para abrir, duplicar o borrar; **💾 Exportar** / **📂 Importar** un `.escenario.json` (con los modelos importados dentro si quieres). `Ctrl+Z` / `Ctrl+Y` deshacen y rehacen.
 5. **▶ Visor** abre el escenario.
+
+### Árboles con modelo 3D
+Los árboles y bosques usan modelos `.glb` reales: **liquidámbar**, **pinsapo**, **pino piñonero** y **palmera datilera** (`glb/arboles/`). «Mezcla según el bioma» los combina solos (templado: liquidámbar, pinsapo y pino; tropical: palmera…), y siguen existiendo las especies sencillas dibujadas por código.
+
+Todos los árboles de todos los bosques se dibujan por instancias, con tres niveles de detalle:
+
+| Distancia (calidad media) | Qué se dibuja |
+|---|---|
+| hasta 45 m | el modelo completo, con sombras |
+| 45–150 m | la versión media (~30–50 % de los triángulos) |
+| 150 m – 3 km | un impostor: una tarjeta con la foto del árbol desde 8 ángulos, hecha al cargar |
+
+Los que quedan fuera de la vista no se dibujan. Las copas se mueven con el viento y se iluminan como un volumen (normales de copa y algo de translucidez). En la calidad baja y alta del visor las distancias cambian (`DISTANCIAS` en `js/vegetacion.js`), y en ⚙ Ajustes se pueden desactivar los árboles con modelo para usar los sencillos.
+
+**Añadir un árbol nuevo:** deja el `.glb` en `modelos-fuente/arboles/` (dos mallas: tronco opaco y copa con transparencia recortada, como los de Blender que ya hay), ejecuta `cd tools && npm install && node preparar-arboles.mjs` y añádelo a `ARBOLES_GLB` en `js/escenario-core.js`. La herramienta pasa las texturas a WebP de 1024 px, comprime la geometría y crea la versión media (12,6 MB de los cuatro originales → 3,8 MB).
 
 ### Modelos GLB
 **➕ Colocar → Modelo GLB → Elegir modelo**:
