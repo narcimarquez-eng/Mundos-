@@ -256,3 +256,30 @@ test('pueblos: salidas creadas desde los caminos y caminos llevados a las salida
   assert.ok(pr && pr.props.cfg.exits.length >= 1);
   assert.ok(r.caminos.some(x => x.tipo === 'riachuelo'));
 });
+
+test('lagos y puentes: vaso con agua contenida, cruces y puentes alineados con el camino', () => {
+  const e = E.crearVacio({ tam: 800, res: 129 });
+  E.generarTerreno(e, { tipo: 'colinas', escala: 200, altura: 20, semilla: 3 });
+  const lago = E.crearElemento(e, 'lago', -200, -200, { radio: 40, forma: 7 });
+  E.excavarLago(e, lago);
+  const W = E.alturaEn(e, lago.x, lago.z) + lago.props.nivel;
+  assert.ok(lago.props.nivel > 0.5, 'el centro queda bajo el agua');
+  for (let k = 0; k < 24; k++) { const a = k / 24 * Math.PI * 2; assert.ok(E.alturaEn(e, lago.x + Math.cos(a) * 40 * 1.25, lago.z + Math.sin(a) * 40 * 1.25) >= W - 0.05, 'el agua no se sale del vaso'); }
+  const rio = E.crearCamino(e, { tipo: 'riachuelo', ancho: 5, puntos: [{ x: 100, z: -300 }, { x: 100, z: 300 }] });
+  E.ajustarTerrenoACamino(e, rio);
+  const c = E.crearCamino(e, { tipo: 'grava', ancho: 9, puntos: [{ x: -100, z: 50 }, { x: 300, z: 50 }] });
+  const cr = E.crucesCaminoRio(e);
+  assert.strictEqual(cr.length, 1);
+  assert.ok(Math.abs(cr[0].x - 100) < 1 && Math.abs(cr[0].z - 50) < 1);
+  const ps = E.ponerPuentes(e, { modelos: ['riotinto'] });
+  assert.strictEqual(ps.length, 1);
+  const pu = ps[0];
+  assert.strictEqual(pu.props.modelo, 'riotinto');
+  assert.strictEqual(pu.props.camino, c.id);
+  assert.ok(Math.abs(Math.abs(pu.rotY) % 180) < 1, 'a lo largo del camino (eje x)');
+  assert.ok(pu.props.ancho >= c.ancho && pu.props.largo >= E.PUENTES.riotinto.vano);
+  assert.strictEqual(E.ponerPuentes(e).length, 0, 'no repite puentes');
+  const tramos = E.puentesDeCamino(e, c);
+  assert.strictEqual(tramos.length, 1);
+  assert.ok(tramos[0].d0 < 200 && tramos[0].d1 > 200, 'el puente cubre el cruce');
+});

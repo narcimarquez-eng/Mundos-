@@ -60,10 +60,11 @@ export function materialAgua(opts) {
           float esp = (1.0 - smoothstep(0.0, 0.06 + r * 0.06, h)) * smoothstep(0.55, 0.85, r);
           diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.86, 0.9, 0.9), esp * 0.6);
           diffuseColor.a = max(diffuseColor.a, esp * 0.7);
+          diffuseColor.a *= smoothstep(-0.3, 0.02, vProf); // donde la malla queda fuera del agua (hondura negativa), desaparece
         }`)
       .replace('#include <normal_fragment_maps>', MAPA_N);
   };
-  m.customProgramCacheKey = () => 'agua-v2';
+  m.customProgramCacheKey = () => 'agua-v3';
   return m;
 }
 

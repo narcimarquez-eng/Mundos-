@@ -136,6 +136,7 @@
     { id: 'naturaleza', nombre: 'Naturaleza' },
     { id: 'juego', nombre: 'Marcas de juego' },
     { id: 'modelos', nombre: 'Modelos GLB' },
+    { id: 'puentes', nombre: 'Puentes' },
     { id: 'rpg', nombre: 'RPG (pueblos, zonas, mazmorras)' }
   ];
   function registrarTipo(def) {
@@ -190,8 +191,23 @@
     props: { radio: 25, cantidad: 30, tamMin: 0.6, tamMax: 4, color: '#7d7a74', semilla: 1 },
     campos: [NUM('radio', 'Radio', 2, 1000, 1), NUM('cantidad', 'Cantidad', 1, 600, 1), NUM('tamMin', 'Tamaño mínimo', 0.1, 50, 0.1), NUM('tamMax', 'Tamaño máximo', 0.1, 80, 0.1), COLOR('color'), NUM('semilla', 'Semilla', 1, 99999, 1)] });
   registrarTipo({ id: 'lago', nombre: 'Lago (área)', icono: '💧', grupo: 'naturaleza', forma: 'area', radioDefecto: 30,
-    props: { radio: 30, nivel: 0, color: '#2f6f8f', excavar: true },
-    campos: [NUM('radio', 'Radio', 3, 2000, 1), NUM('nivel', 'Altura del agua (sobre el suelo del centro)', -20, 20, 0.1), COLOR('color', 'Color del agua')] });
+    props: { radio: 30, nivel: 0, color: '#2f6f8f', excavar: true, forma: 1 },
+    campos: [NUM('radio', 'Radio', 3, 2000, 1), NUM('nivel', 'Altura del agua (sobre el suelo del centro)', -20, 20, 0.1), COLOR('color', 'Color del agua'),
+      NUM('forma', 'Semilla de la forma de la orilla', 1, 99999, 1)] });
+
+  // Puentes (.glb del Creador de Pueblos y del puerto de Riotinto/Odiel). Todos cruzan a lo largo de su eje X local.
+  // vano: largo del modelo (m); calzada: ancho transitable; extremo / centro: altura del tablero en los extremos y en
+  // el centro sobre su base; rampa: hace falta subir el camino hasta el tablero.
+  const PUENTES = {
+    romano: { nombre: 'Romano de dos arcos', archivo: 'glb/puente0.glb', vano: 16.07, calzada: 3.12, extremo: 3.63, centro: 4.1 },
+    torreon: { nombre: 'Medieval con torreón', archivo: 'glb/puente1.glb', vano: 22, calzada: 2.72, extremo: 0.91, centro: 3.31 },
+    madera: { nombre: 'Madera con arcos', archivo: 'glb/puente3.glb', vano: 11.49, calzada: 2.96, extremo: 1.18, centro: 2.0 },
+    riotinto: { nombre: 'Muelle de Riotinto (Odiel)', archivo: 'glb/muelle_riotinto_odiel_juego_web.glb', vano: 16.2, calzada: 3.6, extremo: 2.26, centro: 2.26 },
+    muelle: { nombre: 'Muelle recto de hierro', archivo: 'glb/muelle_recto_juego_web.glb', vano: 12.2, calzada: 3.6, extremo: 2.26, centro: 2.26 }
+  };
+  registrarTipo({ id: 'puente', nombre: 'Puente', icono: '🌉', grupo: 'puentes', props: { modelo: 'romano', largo: 0, ancho: 0, camino: '' },
+    campos: [{ k: 'modelo', n: 'Modelo', t: 'sel', op: Object.entries(PUENTES).map(([k, v]) => [k, v.nombre]) },
+      NUM('largo', 'Largo (m, 0 = el del modelo)', 0, 200, 0.5), NUM('ancho', 'Ancho de la calzada (m, 0 = el del modelo)', 0, 40, 0.5)] });
 
   registrarTipo({ id: 'inicio', nombre: 'Punto de inicio', icono: '🚩', grupo: 'juego', props: { color: '#2ecc71' }, campos: [COLOR('color')] });
   registrarTipo({ id: 'meta', nombre: 'Meta', icono: '🏁', grupo: 'juego', props: { ancho: 14, alto: 6 }, campos: [NUM('ancho', 'Ancho', 2, 80), NUM('alto', 'Alto', 2, 30)] });
@@ -779,6 +795,126 @@
     }
   }
 
+  // --- Lagos: vaso de orilla irregular excavado en el terreno ---
+  function excavarLago(esc, el) {
+    const t = esc.terreno, r = t.res, p = paso(esc), R = el.props.radio;
+    const N = crearRuido((el.props.forma || 1) * 977 + 3);
+    const rr = a => R * (0.78 + 0.34 * (N.fbm(Math.cos(a) * 1.4 + 5, Math.sin(a) * 1.4 + 5, 3) * 0.5 + 0.5));
+    // nivel del agua: un poco por debajo del suelo más bajo de la orilla, para que no se salga
+    let minOrilla = Infinity, suma = 0;
+    for (let k = 0; k < 32; k++) { const a = k / 32 * Math.PI * 2, x = el.x + Math.cos(a) * rr(a), z = el.z + Math.sin(a) * rr(a); const h = alturaEn(esc, x, z); minOrilla = Math.min(minOrilla, h); suma += h; }
+    const W = Math.max(minOrilla, suma / 32 - 2) - 0.35;
+    const prof = clamp(R * 0.07, 1.2, 6);
+    const reg = regionPincel(esc, el.x, el.z, R * 2);
+    const rios = esc.caminos.filter(c => esRio(c) && c.puntos.length >= 2).map(c => ({ c, mu: muestrearCamino(c, 3) }));
+    const enRio = (x, z) => rios.some(o => distanciaACamino(o.c, x, z, o.mu) < o.c.ancho * 1.2);
+    for (let j = reg.j0; j <= reg.j1; j++) for (let i = reg.i0; i <= reg.i1; i++) {
+      const x = -t.tam / 2 + i * p, z = -t.tam / 2 + j * p, dx = x - el.x, dz = z - el.z;
+      const dd = Math.hypot(dx, dz), tt = dd / rr(Math.atan2(dz, dx));
+      const enDisco = dd < R * 1.4; // hasta donde se dibuja el agua del lago
+      if (tt > 1.75 && !enDisco) continue;
+      const k = j * r + i, h = t.alturas[k];
+      if (tt < 1) {
+        // vaso: hondo en el centro y subiendo suave hasta la orilla (justo por debajo del agua)
+        t.alturas[k] = Math.min(h, W - 0.15 - prof * Math.pow(1 - tt * tt, 0.8));
+      } else if (tt < 1.35) {
+        // orilla: del nivel del agua al terreno, en suave
+        const orilla = lerp(W + 0.08, h, suave((tt - 1) / 0.35));
+        t.alturas[k] = h > W + 0.08 ? Math.min(h, orilla) : (enRio(x, z) ? h : W + 0.08); // reborde que contiene el agua, salvo donde entra un río
+      } else if (h < W + 0.1 && !enRio(x, z)) {
+        // más reborde donde el terreno baja por fuera (entero mientras quede dentro del disco de agua)
+        t.alturas[k] = lerp(W + 0.1, h, enDisco ? 0 : suave(clamp((tt - 1.35) / 0.4, 0, 1)));
+      }
+      if (!t.materiales[k] && tt > 0.75 && tt < 1.15) t.materiales[k] = 5; // arena en la orilla
+      else if (!t.materiales[k] && tt <= 0.75) t.materiales[k] = 8;      // barro en el fondo
+    }
+    el.props.nivel = Math.round((W - alturaEn(esc, el.x, el.z)) * 100) / 100;
+    return reg;
+  }
+
+  // --- Puentes sobre caminos ---
+  // Cruces de caminos con riachuelos: [{ camino, rio, d (m en el camino), x, z, dx, dz (dirección del camino) }]
+  function crucesCaminoRio(esc) {
+    const out = [];
+    const rios = esc.caminos.filter(c => esRio(c) && c.puntos.length >= 2);
+    for (const c of esc.caminos) {
+      if (esRio(c) || c.puntos.length < 2) continue;
+      const mc = muestrearCamino(c, 2);
+      for (const rio of rios) {
+        const mr = muestrearCamino(rio, 2);
+        for (let a = 0; a + 1 < mc.length; a++) for (let b = 0; b + 1 < mr.length; b++) {
+          const p = mc[a], q = mc[a + 1], u = mr[b], v = mr[b + 1];
+          const d1x = q.x - p.x, d1z = q.z - p.z, d2x = v.x - u.x, d2z = v.z - u.z;
+          const den = d1x * d2z - d1z * d2x;
+          if (Math.abs(den) < 1e-9) continue;
+          const s1 = ((u.x - p.x) * d2z - (u.z - p.z) * d2x) / den, s2 = ((u.x - p.x) * d1z - (u.z - p.z) * d1x) / den;
+          if (s1 < 0 || s1 > 1 || s2 < 0 || s2 > 1) continue;
+          const l = Math.hypot(d1x, d1z) || 1;
+          const x = p.x + d1x * s1, z = p.z + d1z * s1;
+          if (out.some(o => o.camino === c && o.rio === rio && Math.hypot(o.x - x, o.z - z) < 5)) continue; // el mismo cruce en el borde de dos tramos
+          out.push({ camino: c, rio, d: p.d + (q.d - p.d) * s1, x, z, dx: d1x / l, dz: d1z / l });
+        }
+      }
+    }
+    return out;
+  }
+  // Coloca un puente en el camino más cercano: centrado, a lo largo de él, ancho como el camino y largo para cubrir el
+  // cauce; la base a la altura de las orillas. Devuelve el camino o null.
+  function ajustarPuenteACamino(esc, el, rioAncho) {
+    let best = null;
+    for (const c of esc.caminos) {
+      if (esRio(c) || c.puntos.length < 2) continue;
+      const pr = proyectarEnCamino(c, el.x, el.z);
+      if (pr && pr.dist < Math.max(12, c.ancho) && (!best || pr.dist < best.pr.dist)) best = { c, pr };
+    }
+    if (!best) return null;
+    const { c, pr } = best, def = PUENTES[el.props.modelo] || PUENTES.romano;
+    const mu = muestrearCamino(c, 1);
+    let k = mu.findIndex(m => m.d >= pr.d); if (k < 1) k = 1;
+    const dx = mu[k].x - mu[k - 1].x, dz = mu[k].z - mu[k - 1].z, l = Math.hypot(dx, dz) || 1;
+    el.x = Math.round(pr.x * 10) / 10; el.z = Math.round(pr.z * 10) / 10;
+    el.rotY = Math.round(Math.atan2(-dz / l, dx / l) * 1800 / Math.PI) / 10;
+    el.props.camino = c.id;
+    if (!el.props.ancho) el.props.ancho = Math.max(def.calzada, c.ancho + 1);
+    if (!el.props.largo) el.props.largo = Math.max(def.vano, (rioAncho || 5) * 2.2 + 8);
+    const L = el.props.largo / 2;
+    const hA = alturaEn(esc, el.x - dx / l * L, el.z - dz / l * L), hB = alturaEn(esc, el.x + dx / l * L, el.z + dz / l * L);
+    el.y = Math.round((Math.max(hA, hB) - 0.2 - alturaEn(esc, el.x, el.z)) * 100) / 100;
+    return c;
+  }
+  // Pone un puente en cada cruce de camino y riachuelo que no lo tenga. modelos: lista de modelos a repartir;
+  // vados: cuántos cruces (los primeros de cada camino) se dejan como vado. Devuelve los puentes nuevos.
+  function ponerPuentes(esc, opts) {
+    opts = opts || {};
+    const modelos = opts.modelos || ['romano'];
+    const nuevos = [];
+    let n = 0;
+    const cruces = crucesCaminoRio(esc).sort((a, b) => a.camino === b.camino ? a.d - b.d : 0);
+    const vistos = new Map();
+    for (const cr of cruces) {
+      const ya = esc.elementos.some(e => e.tipo === 'puente' && Math.hypot(e.x - cr.x, e.z - cr.z) < 15);
+      const iC = (vistos.get(cr.camino.id) || 0); vistos.set(cr.camino.id, iC + 1);
+      if (ya || iC < (opts.vados || 0)) continue;
+      const el = crearElemento(esc, 'puente', cr.x, cr.z, { modelo: modelos[n++ % modelos.length], nombre: 'Puente ' + (esc.elementos.filter(e => e.tipo === 'puente').length + 1) });
+      ajustarPuenteACamino(esc, el, cr.rio.ancho);
+      nuevos.push(el);
+    }
+    return nuevos;
+  }
+  // Tramos de un camino que van por un puente: [{ d0, d1, alto (altura del tablero en los extremos), rampa }]
+  function puentesDeCamino(esc, c) {
+    const out = [];
+    for (const el of esc.elementos) {
+      if (el.tipo !== 'puente' || el.props.camino !== c.id) continue;
+      const def = PUENTES[el.props.modelo] || PUENTES.romano;
+      const pr = proyectarEnCamino(c, el.x, el.z);
+      if (!pr || pr.dist > c.ancho) continue;
+      const L = (el.props.largo || def.vano) / 2;
+      out.push({ d0: pr.d - L, d1: pr.d + L, alto: alturaEn(esc, el.x, el.z) + (el.y || 0) + def.extremo, rampa: Math.max(4, def.extremo * 3) });
+    }
+    return out;
+  }
+
   // --- Salidas del pueblo y caminos del escenario ---
   // El Creador de Pueblos hace cada salida como una calle recta desde la plaza hasta el borde de su terreno (un
   // cuadrado de lado max(240, (42 + 14·size + 65)·2) m), girado cfg.rotation grados. Ángulos locales con atan2(z, x).
@@ -899,7 +1035,7 @@
       if (pueblos[0]) crearElemento(esc, 'inicio', pueblos[0].x + pueblos[0].props.radio * 0.3, pueblos[0].z);
     } });
 
-  registrarPlantilla({ id: 'rally', nombre: 'Circuito de rally', icono: '🏎', desc: 'Colinas con un circuito de grava y asfalto, barreras, un riachuelo con vados, un pueblo y bosques.',
+  registrarPlantilla({ id: 'rally', nombre: 'Circuito de rally', icono: '🏎', desc: 'Colinas con un circuito de grava y asfalto, barreras, riachuelos con puentes y un vado, lagos, un pueblo y bosques.',
     tam: 1536, bioma: 'templado',
     aplicar(esc, rng) {
       generarTerreno(esc, { tipo: 'colinas', escala: 380, altura: 45, octavas: 5 });
@@ -957,7 +1093,44 @@
       if (alturaEn(esc, rpts[0].x, rpts[0].z) < alturaEn(esc, rpts[rpts.length - 1].x, rpts[rpts.length - 1].z)) rpts.reverse(); // nace en el lado alto
       const rio = crearCamino(esc, { tipo: 'riachuelo', ancho: 5, nombre: 'Riachuelo', puntos: rpts });
       ajustarTerrenoACamino(esc, rio);
-      const libre = (x, z) => distanciaACamino(c, x, z, mu) > 45 && Math.hypot(x - pueblo.x, z - pueblo.z) > hP + 25 && distanciaACamino(rio, x, z) > 15;
+      // Lagos de tres tamaños, y un segundo riachuelo que baja desde lo alto hasta el más grande
+      const lagos = [];
+      for (const R of [70, 40, 22]) {
+        const s2 = buscarSitio(esc, rng, (x, z) => Math.abs(x) < m - R * 1.6 && Math.abs(z) < m - R * 1.6 && distanciaACamino(c, x, z, mu) > R * 1.5 + 20 &&
+          Math.hypot(x - pueblo.x, z - pueblo.z) > hP + R * 1.5 && distanciaACamino(rio, x, z) > R * 1.5 + 10 && lagos.every(l => Math.hypot(l.x - x, l.z - z) > (l.props.radio + R) * 1.8), 1500);
+        if (!s2) continue;
+        const lago = crearElemento(esc, 'lago', s2.x, s2.z, { radio: R, nombre: R > 50 ? 'Lago grande' : R > 30 ? 'Lago' : 'Charca', forma: rng.int(1, 99999) });
+        excavarLago(esc, lago);
+        lagos.push(lago);
+      }
+      let rio2 = null;
+      if (lagos[0]) {
+        const L = lagos[0];
+        let alto = null;
+        for (let k = 0; k < 300; k++) {
+          const a = rng.next() * Math.PI * 2, d = rng.range(m * 0.45, m * 0.8), x = L.x + Math.cos(a) * d, z = L.z + Math.sin(a) * d;
+          if (Math.abs(x) > m * 0.95 || Math.abs(z) > m * 0.95 || Math.hypot(x - pueblo.x, z - pueblo.z) < hP + 30) continue;
+          const h = alturaEn(esc, x, z);
+          if (!alto || h > alto.h) alto = { x, z, h };
+        }
+        if (alto) {
+          const pts2 = [];
+          for (let k = 0; k <= 6; k++) {
+            const f = k / 6, x = alto.x + (L.x - alto.x) * f, z = alto.z + (L.z - alto.z) * f;
+            const off = k > 0 && k < 6 ? N2.ruido(k * 0.8, 9.1) * 60 : 0, dx = L.x - alto.x, dz = L.z - alto.z, dl = Math.hypot(dx, dz) || 1;
+            pts2.push({ x: x - dz / dl * off, z: z + dx / dl * off });
+          }
+          rio2 = crearCamino(esc, { tipo: 'riachuelo', ancho: 3.5, nombre: 'Arroyo del lago', puntos: pts2 });
+          ajustarTerrenoACamino(esc, rio2);
+          excavarLago(esc, L); // que el arroyo desemboque en el lago
+        }
+      }
+      // Puentes donde los caminos cruzan los riachuelos (el muelle de Riotinto el primero); un cruce de la pista queda como vado
+      const puentes = ponerPuentes(esc, { modelos: ['riotinto', 'romano', 'madera', 'torreon', 'muelle'] });
+      const dePista = puentes.filter(pu => pu.props.camino === c.id);
+      if (dePista.length > 1) quitar(esc, dePista[dePista.length - 1].id);
+      const libre = (x, z) => distanciaACamino(c, x, z, mu) > 45 && Math.hypot(x - pueblo.x, z - pueblo.z) > hP + 25 && distanciaACamino(rio, x, z) > 15 &&
+        (!rio2 || distanciaACamino(rio2, x, z) > 12) && lagos.every(l => Math.hypot(l.x - x, l.z - z) > l.props.radio * 1.4 + 10);
       for (let k = 0; k < 14; k++) {
         const s = buscarSitio(esc, rng, libre);
         if (s) crearElemento(esc, 'bosque', s.x, s.z, { radio: rng.int(30, 80), densidad: rng.range(4, 10), especie: rng.pick(['pinsapo', 'pino_pinonero', 'mixto']) });
@@ -1108,6 +1281,7 @@
     PRADERA, VEG_NADA, codVegetacion, decodVegetacion, vegetacionEn, pintarVegetacion,
     TIPOS_BARRERA, LADOS, largoCamino, enTramo, superficieEn, proyectarEnCamino, caminoEn,
     crearCamino, muestrearCamino, rasante, ajustarTerrenoACamino, materialCamino, distanciaACamino,
+    PUENTES, excavarLago, crucesCaminoRio, ajustarPuenteACamino, ponerPuentes, puentesDeCamino,
     esRio, profundidadRio, nivelesRio, mitadTerrenoPueblo, puntoSalidaPueblo, anguloLocalPueblo, conectarCaminosPueblo,
     crearElemento, buscarElemento, buscarCamino, quitar, duplicarElemento, radioElemento, prepararPueblo, copiaProfunda,
     serializar, deserializar, remuestrear, bytesABase64, base64ABytes

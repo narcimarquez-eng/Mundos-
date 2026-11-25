@@ -385,6 +385,7 @@ function clic(ev, boton) {
     if (esc.terreno.agua.activa && E.alturaEn(esc, p.x, p.z) < esc.terreno.agua.nivel && def.forma !== 'area') el.y = Math.round((esc.terreno.agua.nivel - E.alturaEn(esc, p.x, p.z)) * 10) / 10;
     if (el.tipo === 'pueblo') { const reg = E.prepararPueblo(esc, el); escena.actualizarTerreno(); tocarZona(reg); }
     if (el.tipo === 'lago') excavarLago(el, false);
+    if (el.tipo === 'puente' && !E.ajustarPuenteACamino(esc, el)) aviso('Puente sin camino cerca: colócalo sobre un camino para que se alinee solo');
     escena.actualizarElemento(el);
     sel = el.id; marcarSeleccion();
     programarGuardado();
@@ -470,10 +471,7 @@ function borrar(id) {
 }
 function excavarLago(el, conDeshacer) {
   if (conDeshacer) puntoDeshacer();
-  const suelo = E.alturaEn(esc, el.x, el.z);
-  const reg = E.allanarArea(esc, el.x, el.z, el.props.radio * 0.85, suelo + (el.props.nivel || 0) - 2.5, el.props.radio * 0.3).region;
-  // la posición del agua queda relativa al nuevo suelo del centro
-  el.props.nivel = Math.round((suelo + (el.props.nivel || 0) - E.alturaEn(esc, el.x, el.z)) * 10) / 10;
+  const reg = E.excavarLago(esc, el);
   escena.actualizarTerreno(); tocarZona(reg);
   programarGuardado();
 }
@@ -661,9 +659,11 @@ function panelCaminos() {
         boton(E.esRio(c) ? '⛏ Excavar cauce' : '⛏ Ajustar terreno', () => { puntoDeshacer(); const reg = E.ajustarTerrenoACamino(esc, c); if (reg) { escena.actualizarTerreno(); tocarZona(reg); } programarGuardado(); aviso('Terreno allanado bajo el camino'); }, '', 'Allana el terreno a lo ancho del camino y suaviza los taludes'),
         boton('🖌 Pintar suelo', () => { puntoDeshacer(); const reg = E.ajustarTerrenoACamino(esc, c, { pintar: true, margen: 0.01 }); if (reg) { escena.actualizarTerreno(); tocarZona(reg); } programarGuardado(); }, '', 'Pinta el material del camino en el suelo')),
       botones(
+        boton('🌉 Puentes en los cruces', () => { puntoDeshacer(); const n = E.ponerPuentes(esc, { modelos: [nuevaBarrera.puente || 'romano'] }); n.forEach(p => escena.actualizarElemento(p)); escena.construirCaminos(); programarGuardado(); aviso(n.length ? n.length + ' puente(s) puestos donde los caminos cruzan riachuelos' : 'No hay cruces sin puente'); }, '', 'Pone un puente en cada cruce de camino y riachuelo que no tenga'),
         boton('↩ Quitar último', () => { puntoDeshacer(); c.puntos.pop(); terminarEdicionCamino(); }),
         boton('⇄ Invertir', () => { puntoDeshacer(); c.puntos.reverse(); terminarEdicionCamino(); }),
         boton('✓ Terminar', () => { caminoActivo = null; sel = null; dibujarAsas(); renderPanel(); }, 'primario')),
+      selector('Modelo de los puentes nuevos', nuevaBarrera.puente || 'romano', Object.entries(E.PUENTES).map(([k, v]) => [k, v.nombre]), v => { nuevaBarrera.puente = v; }),
       botones(boton('🗑 Borrar camino', () => { puntoDeshacer(); borrar(c.id); }, 'peligro')));
     if (!E.esRio(c)) { panelTramos(c); panelBarreras(c); }
   }
@@ -839,7 +839,9 @@ function panelSeleccion() {
       botones(boton('🕳 Abrir en el Creador de Mazmorras', () => abrirCreadorMazmorras(el), 'primario')));
   }
   if (el.tipo === 'zona') panelEnemigosZona(el, rehacerEl);
-  if (el.tipo === 'lago') cuerpo.append(botones(boton('⛏ Excavar lecho', () => excavarLago(el, true))));
+  if (el.tipo === 'lago') cuerpo.append(botones(boton('⛏ Excavar lecho', () => excavarLago(el, true))), ayuda('Excava un vaso de orilla irregular (cambia «Semilla de la forma» para otra orilla) y pone el agua un poco por debajo de la orilla más baja.'));
+  if (el.tipo === 'puente') cuerpo.append(botones(boton('↔ Alinear con el camino', () => { puntoDeshacer(); el.props.largo = 0; el.props.ancho = 0; if (!E.ajustarPuenteACamino(esc, el)) aviso('No hay ningún camino cerca'); rehacerEl(); renderPanel(); })),
+    ayuda('El puente se centra en el camino más cercano, se gira a lo largo de él y se estira al ancho de la calzada. El camino sube en rampa hasta su tablero.'));
   if (el.tipo === 'camara') cuerpo.append(botones(boton('👁 Ver desde aquí', () => {
     const y = E.alturaEn(esc, el.x, el.z) + (el.y || 0) + el.props.altura, a = (el.rotY || 0) * DEG, inc = el.props.inclinacion * DEG;
     camara.position.set(el.x, y, el.z);

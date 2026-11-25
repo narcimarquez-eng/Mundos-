@@ -312,11 +312,13 @@ registrarDibujo('rocas', (el, ctx) => {
 registrarDibujo('lago', (el, ctx) => {
   const p = el.props;
   // disco con anillos (para que la hondura varíe de la orilla al centro) y uv en metros
-  const geo = new THREE.RingGeometry(0.01, p.radio, 64, 14).rotateX(-Math.PI / 2);
+  const geo = new THREE.RingGeometry(0.01, p.radio * 1.35, 72, 18).rotateX(-Math.PI / 2); // la orilla la marca el terreno
   const uvs = geo.attributes.uv, pos = geo.attributes.position;
   for (let i = 0; i < pos.count; i++) uvs.setXY(i, pos.getX(i) / 9, pos.getZ(i) / 9);
   const nivel = ctx.baseY + (p.nivel || 0) + 0.05;
   ponerHondura(geo, ctx.esc, nivel, (x, z) => ({ x: el.x + x, z: el.z + z }));
+  const hp = geo.attributes.aProf; // el anillo de fuera, siempre fuera del agua: así no flota sobre terreno más bajo
+  for (let i = 0; i < pos.count; i++) if (Math.hypot(pos.getX(i), pos.getZ(i)) > p.radio * 1.3) hp.setX(i, Math.min(-0.35, hp.getX(i)));
   const hondo = new THREE.Color(p.color || '#2f6f8f').multiplyScalar(0.45);
   const m = new THREE.Mesh(geo, ctx.materialAgua({ colorHondo: '#' + hondo.getHexString(), colorSomero: '#4f8a80', hondura: 1.6, clave: 'lago' + hondo.getHexString() }));
   m.position.y = (p.nivel || 0) + 0.05; m.receiveShadow = true; m.renderOrder = 2;
@@ -415,6 +417,24 @@ function dibujarModelo(el, ctx, ruta, altura) {
   });
   return g;
 }
+// Puentes: el .glb tal cual (cruza a lo largo de su X), estirado al largo y al ancho de la calzada
+registrarDibujo('puente', (el, ctx) => {
+  const def = E.PUENTES[el.props.modelo] || E.PUENTES.romano;
+  const g = new THREE.Group();
+  const sx = (el.props.largo || def.vano) / def.vano, sz = (el.props.ancho || def.calzada) / def.calzada;
+  const tmp = new THREE.Mesh(new THREE.BoxGeometry(def.vano * sx, def.centro, def.calzada * sz), new THREE.MeshBasicMaterial({ color: '#888', wireframe: true }));
+  tmp.position.y = def.centro / 2; g.add(tmp);
+  ctx.cargarModelo(def.archivo).then(res => {
+    g.remove(tmp);
+    if (!res) { g.add(marcadorFalta('No se pudo cargar el puente')); return; }
+    const obj = SkeletonUtils.clone(res.escena);
+    obj.scale.set(sx, 1, sz);
+    obj.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+    g.add(obj);
+    ctx.alCambiar();
+  });
+  return g;
+});
 registrarDibujo('glb', (el, ctx) => dibujarModelo(el, ctx, el.props.modelo, el.props.alturaObjetivo));
 registrarDibujo('enemigo', (el, ctx) => {
   const g = dibujarModelo(el, ctx, el.props.modelo, el.props.alturaObjetivo || 2.4);
@@ -919,7 +939,7 @@ export class Escena3D {
       for (let k = 0; k < mu.length; k++) {
         const a = mu[Math.max(0, k - 1)], b = mu[Math.min(mu.length - 1, k + 1)];
         let dx = b.x - a.x, dz = b.z - a.z; const l = Math.hypot(dx, dz) || 1; dx /= l; dz /= l;
-        for (const u of cruz) { const x = mu[k].x - dz * u * c.ancho, z = mu[k].z + dx * u * c.ancho; pos.push(x, niv[k], z); uv.push((u + 0.5) * c.ancho / 5, mu[k].d / 5); prof.push(niv[k] - E.alturaEn(esc, x, z)); }
+        for (const u of cruz) { const x = mu[k].x - dz * u * c.ancho, z = mu[k].z + dx * u * c.ancho; pos.push(x, niv[k], z); uv.push((u + 0.5) * c.ancho / 5, mu[k].d / 5); prof.push(Math.abs(u) >= 0.8 ? Math.min(-0.35, niv[k] - E.alturaEn(esc, x, z)) : niv[k] - E.alturaEn(esc, x, z)); } // el borde exterior, siempre fuera del agua
         if (k > 0) for (let q = 0; q < W - 1; q++) { const a0 = (k - 1) * W + q, a1 = a0 + 1, b0 = k * W + q, b1 = b0 + 1; idx.push(a0, a1, b0, a1, b1, b0); }
       }
       g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
@@ -949,6 +969,21 @@ export class Escena3D {
     const cruz = (hayLineas ? [-0.5, -0.47, -0.462, -0.448, -0.44, -0.2, 0, 0.2, 0.44, 0.448, 0.462, 0.47, 0.5] : [-0.5, -0.42, -0.2, 0, 0.2, 0.42, 0.5]);
     if (tex) { cruz.unshift(-0.56); cruz.push(0.56); }
     const tipos = E.TIPOS_CAMINO.map(t => t[0]);
+    // Puentes de este camino: bajo el tablero no se dibuja el camino y a los lados sube en rampa hasta él
+    const puentes = E.puentesDeCamino(esc, c);
+    const enPuente = d => puentes.some(b => d > b.d0 + 0.4 && d < b.d1 - 0.4);
+    // rampa: { alto (tablero), f (0 lejos del puente … 1 en su extremo) } o null
+    const rampaEn = d => {
+      let r = null;
+      for (const b of puentes) {
+        const fuera = d < b.d0 ? b.d0 - d : d > b.d1 ? d - b.d1 : 0;
+        if (fuera > b.rampa) continue;
+        const f = THREE.MathUtils.smoothstep(1 - fuera / b.rampa, 0, 1);
+        if (!r || f > r.f) r = { alto: b.alto, f };
+      }
+      return r;
+    };
+    const hueco = new Uint8Array(mu.length);
     let pesos = null;
     const pesosEn = d => { const p = new Array(8).fill(0); for (const dd of [d - 1.5, d, d, d + 1.5]) p[Math.max(0, tipos.indexOf(E.superficieEn(c, dd)))] += 0.25; return p; };
     const escTex = escalaCamino(c.tipo);
@@ -969,9 +1004,12 @@ export class Escena3D {
       const nx = -dz, nz = dx;
       muestraSup(mu[k].d);
       if (tex) pesos = pesosEn(mu[k].d);
+      hueco[k] = puentes.length && enPuente(mu[k].d) ? 1 : 0;
+      const rampa = puentes.length ? rampaEn(mu[k].d) : null;
       for (let q = 0; q < W; q++) {
         const u = cruz[q], x = mu[k].x + nx * u * c.ancho, z = mu[k].z + nz * u * c.ancho;
-        const y = Math.max(E.alturaEn(esc, x, z), agua) + (Math.abs(u) > 0.49 ? 0.06 : 0.14);
+        let y = Math.max(E.alturaEn(esc, x, z), agua) + (Math.abs(u) > 0.49 ? 0.06 : 0.14);
+        if (rampa) y = Math.max(y, THREE.MathUtils.lerp(y, rampa.alto + 0.05, rampa.f));
         pos.push(x, y, z);
         const v = 0.95 + ((k * 7 + q * 13) % 10) / 100;
         if (tex) {
@@ -987,7 +1025,7 @@ export class Escena3D {
           uv.push((u + 0.5) * c.ancho / 6, mu[k].d / 6);
         }
       }
-      if (k > 0) for (let q = 0; q < W - 1; q++) { const a0 = (k - 1) * W + q, a1 = a0 + 1, b0 = k * W + q, b1 = b0 + 1; idx.push(a0, a1, b0, a1, b1, b0); }
+      if (k > 0 && !(hueco[k] && hueco[k - 1])) for (let q = 0; q < W - 1; q++) { const a0 = (k - 1) * W + q, a1 = a0 + 1, b0 = k * W + q, b1 = b0 + 1; idx.push(a0, a1, b0, a1, b1, b0); }
     }
     g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
     g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
@@ -1026,6 +1064,7 @@ export class Escena3D {
   }
   actualizarElemento(el) {
     this.quitarElemento(el.id);
+    if (el.tipo === 'puente' && this.esc) setTimeout(() => this.construirCaminos(), 0); // el camino sube al tablero
     const fn = DIBUJOS[el.tipo];
     const g = new THREE.Group();
     g.userData.elId = el.id;

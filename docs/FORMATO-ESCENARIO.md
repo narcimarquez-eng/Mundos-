@@ -75,7 +75,8 @@ Los puntos son de control: la línea real es una curva Catmull-Rom que pasa por 
 | `roca` | punto | `tam, color` |
 | `bosque` | área | `radio, especie` (o `mixto`: mezcla según el bioma), `densidad` (árboles cada 1000 m²), `tamano` (× la altura de los árboles con modelo), `altoMin, altoMax` (árboles sencillos), `rocas, semilla` |
 | `rocas` | área | `radio, cantidad, tamMin, tamMax, color, semilla` |
-| `lago` | área | `radio, nivel` (altura del agua sobre el suelo del centro), `color` |
+| `lago` | área | `radio, nivel` (altura del agua sobre el suelo del centro), `color`, `forma` (semilla de la orilla irregular; `Escenario.excavarLago` hace el vaso) |
+| `puente` | punto | `modelo` (`romano`, `torreon`, `madera`, `riotinto`, `muelle`), `largo` y `ancho` (m; 0 = los del modelo), `camino` (id del camino que cruza). Cruza a lo largo de su X local (`rotY`); `Escenario.puentesDeCamino` da los tramos del camino que van por él. |
 | `inicio` | punto | `color`. Salida del jugador, mirando a `rotY`. |
 | `meta` | punto | `ancho, alto`. Arco de meta. |
 | `checkpoint` | punto | `orden, ancho, alto, color` |

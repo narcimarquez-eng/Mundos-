@@ -22,7 +22,7 @@ Viene de la parte de edición del [Creador de Mundos RPG](https://github.com/nar
 
 Abre `index.html` servido por web (GitHub Pages o `npx serve .`); usa módulos y three.js desde jsDelivr, así que no basta con abrirlo como archivo.
 
-El escenario de ejemplo (el circuito de rally) trae un **pueblo de prueba** con su camino de acceso, un **riachuelo** que cruza la pista por dos vados, hierba, bosques y barreras.
+El escenario de ejemplo (el circuito de rally) trae un **pueblo de prueba** con su camino de acceso, **dos riachuelos** (uno desemboca en el lago grande), **tres lagos** de distinto tamaño, **puentes** sobre la pista (el muelle de Riotinto y el romano) y un vado, hierba, bosques y barreras.
 
 1. **✨ Nuevo** → elige una plantilla: Lienzo vacío, Mundo RPG, Circuito de rally, Plataformas, Archipiélago, Cordillera, Desierto o Volcán. Tamaño de 256 m a 8 km y tres niveles de detalle del terreno.
 2. **Herramientas** (barra izquierda, teclas `1`–`6`):
@@ -61,6 +61,10 @@ Los que quedan fuera de la vista no se dibujan. Las copas se mueven con el vient
 
 ### Riachuelos
 En 🛣 Caminos, tipo **Riachuelo (agua)**: el agua corre del primer punto al último y nunca sube. «⛏ Excavar cauce» hunde el terreno a lo largo del río; donde atraviesa una loma corta más hondo pero con laderas anchas, como un valle. Donde cruza un camino queda un **vado** con el agua por encima. El agua (también la del mar y los lagos, `js/agua.js`) refleja el cielo según la hora, cambia de color con la hondura (clara y transparente en la orilla, oscura en el centro), tiene espuma en el filo de la orilla y dos capas de ondas que se mueven río abajo con brillos del sol. No crece hierba ni árboles en el cauce. Para el juego, `Escenario.caminoEn` devuelve `riachuelo` y `Escenario.nivelesRio` la altura del agua.
+
+### Lagos y puentes
+- **Lagos** (➕ Colocar → Naturaleza → Lago): al colocarlo se excava un vaso de **orilla irregular** (cambia «Semilla de la forma» y pulsa «⛏ Excavar lecho» para otra), con playa de arena y fondo de barro. El agua queda un poco por debajo de la orilla más baja y, donde el terreno baja por fuera, se levanta un reborde para que no se salga (salvo donde entra un riachuelo). Hay de cualquier tamaño, de charca a lago grande.
+- **Puentes** (➕ Colocar → Puentes, o «🌉 Puentes en los cruces» en el panel de un camino o riachuelo): los tres puentes del Creador de Pueblos (**romano de dos arcos**, **medieval con torreón**, **de madera con arcos**) y los del puerto de Huelva: el **muelle de Riotinto (Odiel)** y el **muelle recto de hierro**. Al colocarlo sobre un camino se centra en él, se gira a lo largo y se estira al ancho de la calzada y al largo necesario para salvar el cauce; la base queda a la altura de las orillas. El camino **sube en rampa hasta su tablero** y no se dibuja debajo del puente. «↔ Alinear con el camino» lo vuelve a ajustar. Los cruces sin puente quedan como vado.
 
 ### Pueblos completos en el escenario
 Los pueblos se ven **completos** (casas, calles, plaza, murallas, farolas, árboles…, con el mismo generador que el Creador de Pueblos) cuando la cámara está a menos de 900 m; más lejos, la maqueta. El pueblo sigue el terreno del escenario (`terrainBase` del generador). Se puede desactivar en *Escenario → Vista* (editor) y en ⚙ Ajustes (visor). El río interno del pueblo (`hasRiver`) no se dibuja dentro del escenario: para agua, usa un riachuelo.
