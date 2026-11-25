@@ -1089,8 +1089,8 @@
       ajustarTerrenoACamino(esc, c, { margen: 12 });
       const m = esc.terreno.tam / 2;
       // Pueblo blanco andaluz EN la pista: el circuito entra por una salida, rodea la plaza y sale por la otra
-      const cfgP = cfgPuebloPorDefecto(rng.int(1, 99999), 3);
-      Object.assign(cfgP, { style: 'andaluz', casas: 'andaluza', trazado: 'adosadas', hasWalls: false, hasRiver: false, hasMagic: false, specialCount: 2, treeDensity: 35, relief: 0, rotation: 0 });
+      const cfgP = cfgPuebloPorDefecto(rng.int(1, 99999), 5); // grande: muchas casas
+      Object.assign(cfgP, { style: 'andaluz', casas: 'andaluza', trazado: 'adosadas', houseDensity: 100, maxFloors: 2, puestos: false, hasWalls: false, hasRiver: false, hasMagic: false, specialCount: 0, treeDensity: 35, relief: 0, rotation: 0 });
       const hP = mitadTerrenoPueblo(cfgP);
       let mu0 = muestrearCamino(c, 2);
       const total0 = mu0[mu0.length - 1].d;

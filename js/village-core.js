@@ -647,7 +647,9 @@
         magicHex: 0xf59e0b,
         towerStyle: 'round',
         palisade: false,
-        defaultWalls: false
+        defaultWalls: false,
+        plazaAdoquin: true,   // plaza de adoquín de granito con cintas de piedra clara (sin mosaico)
+        sinPuestos: true      // sin puestos de mercado en la plaza
       },
       l2_fantasy: {
         name: 'Fantasía Lineage 2',
@@ -1206,6 +1208,52 @@
       pbCtx.fillStyle = '#121212';
       pbCtx.fillRect(0, 0, pSize, pSize);
 
+      if (styleObj.plazaAdoquin) {
+        // Plaza andaluza: adoquín de granito a matajunta, cuadriculado por cintas de piedra clara cada ~4 m,
+        // un anillo de losas alrededor de la fuente y un bordillo de losas grandes
+        const pxm = pSize / 31.6; // píxeles por metro (el disco mide 31,6 m)
+        const granito = ['#8d8a83', '#7f7c75', '#99958d', '#74716b', '#86827a', '#a19c92', '#6d6a64'];
+        let semillaA = 9173;
+        const azar = () => { semillaA = (semillaA * 16807) % 2147483647; return semillaA / 2147483647; };
+        pCtx.fillStyle = '#4a4741'; pCtx.fillRect(0, 0, pSize, pSize);
+        pbCtx.fillStyle = '#202020'; pbCtx.fillRect(0, 0, pSize, pSize);
+        const aw = 0.42 * pxm, ah = 0.24 * pxm;
+        for (let fila = 0, y = 0; y < pSize; fila++, y += ah) {
+          const off = (fila % 2) * aw * 0.5;
+          for (let x = -off; x < pSize; x += aw) {
+            const w = aw - 1.6 - azar() * 1.2, h = ah - 1.6 - azar() * 1.0;
+            pCtx.fillStyle = granito[Math.floor(azar() * granito.length)];
+            pCtx.fillRect(x + 0.8, y + 0.8, w, h);
+            pCtx.fillStyle = 'rgba(255,255,255,' + (0.05 + azar() * 0.08).toFixed(3) + ')';
+            pCtx.fillRect(x + 0.8, y + 0.8, w, 1.3);
+            const b = 160 + Math.floor(azar() * 60);
+            pbCtx.fillStyle = 'rgb(' + b + ',' + b + ',' + b + ')';
+            pbCtx.fillRect(x + 0.8, y + 0.8, w, h);
+          }
+        }
+        // cintas de piedra clara (cuadrícula de 4 m), como en las plazas empedradas con verdugadas
+        const cinta = 0.32 * pxm, paso = 4 * pxm;
+        for (let c = pcx % paso; c < pSize; c += paso) {
+          pCtx.fillStyle = '#d8d0bf'; pCtx.fillRect(c - cinta / 2, 0, cinta, pSize); pCtx.fillRect(0, c - cinta / 2, pSize, cinta);
+          pbCtx.fillStyle = '#e6e6e6'; pbCtx.fillRect(c - cinta / 2, 0, cinta, pSize); pbCtx.fillRect(0, c - cinta / 2, pSize, cinta);
+          pCtx.fillStyle = 'rgba(60,50,40,0.35)';
+          for (let t = 0; t < pSize; t += 0.6 * pxm) { pCtx.fillRect(c - cinta / 2, t, cinta, 1.2); pCtx.fillRect(t, c - cinta / 2, 1.2, cinta); }
+        }
+        // anillo de losas alrededor de la fuente (r 4 a 5,4 m) y bordillo exterior de losas grandes
+        const anillo = (r0, r1, n, color) => {
+          for (let k = 0; k < n; k++) {
+            const a0 = k / n * Math.PI * 2 + 0.01, a1 = (k + 1) / n * Math.PI * 2 - 0.01;
+            [[pCtx, color], [pbCtx, '#ededed']].forEach(([cx, col]) => {
+              cx.fillStyle = col; cx.beginPath();
+              cx.moveTo(pcx + Math.cos(a0) * r0, pcy + Math.sin(a0) * r0); cx.lineTo(pcx + Math.cos(a0) * r1, pcy + Math.sin(a0) * r1);
+              cx.lineTo(pcx + Math.cos(a1) * r1, pcy + Math.sin(a1) * r1); cx.lineTo(pcx + Math.cos(a1) * r0, pcy + Math.sin(a1) * r0);
+              cx.closePath(); cx.fill();
+            });
+          }
+        };
+        anillo(3.9 * pxm, 5.4 * pxm, 28, '#ddd5c4');
+        anillo(maxR - 0.9 * pxm, maxR, 64, '#cfc6b3');
+      } else {
       // 1. Anillos concéntricos de adoquines trapeciales labrados en abanico
       const ringCount = 16;
       const minRingR = pSize * 0.13;
@@ -1325,6 +1373,8 @@
         pbCtx.lineWidth = 3;
         pbCtx.stroke();
       }
+
+      } // fin del mosaico (estilos sin plazaAdoquin)
 
       const plazaTex = new THREE.CanvasTexture(plazaCanvas);
       plazaTex.wrapS = plazaTex.wrapT = THREE.ClampToEdgeWrapping;
@@ -3731,9 +3781,22 @@
             if (edit.removedStreets.has(id)) return;
             const off = edit.movedStreets.get(id);
             const final = off ? pts.map(q => ({ x: q.x + off.dx, z: q.z + off.dz })) : pts;
-            this.splitAtRiver(cfg, final, width, roadsGroup, matAtlas).forEach(pc => {
-              if (pc.length > 1) pushRoad(id, pc, width, 0.034);
+            // la calle se corta en el borde de la plaza: no pasa por encima del adoquinado
+            const RP = 15.4, dentro = q => Math.hypot(q.x, q.z) < RP;
+            const corte = (a, b) => { // punto del segmento a-b sobre el borde de la plaza
+              let t0 = 0, t1 = 1;
+              for (let it = 0; it < 20; it++) { const tm = (t0 + t1) / 2, m = { x: a.x + (b.x - a.x) * tm, z: a.z + (b.z - a.z) * tm }; if (dentro(m) === dentro(a)) t0 = tm; else t1 = tm; }
+              return { x: a.x + (b.x - a.x) * t1, z: a.z + (b.z - a.z) * t1 };
+            };
+            const trozos = [[]];
+            final.forEach((q, i) => {
+              const prev = final[i - 1], tr = trozos[trozos.length - 1];
+              if (dentro(q)) { if (prev && !dentro(prev)) { tr.push(corte(prev, q)); trozos.push([]); } }
+              else { if (prev && dentro(prev)) tr.push(corte(prev, q)); tr.push(q); }
             });
+            trozos.filter(t => t.length > 1).forEach(t => this.splitAtRiver(cfg, t, width, roadsGroup, matAtlas).forEach(pc => {
+              if (pc.length > 1) pushRoad(id, pc, width, 0.034);
+            }));
           };
           const n = Math.ceil(2 * g.R / 3.5);
           for (let k = -g.m; k <= g.m; k++) {
@@ -4481,7 +4544,9 @@
         const stalls = [];
         const barrels = [];
 
-        if (cfg.hasProps) {
+        // Puestos de mercado en la plaza: cfg.puestos (por defecto, sí salvo en los estilos con sinPuestos)
+        const conPuestos = cfg.puestos != null ? !!cfg.puestos : !styleObj.sinPuestos;
+        if (cfg.hasProps && conPuestos) {
           for (let i = 0; i < 6; i++) {
             const ang = (i / 6) * Math.PI * 2 + 0.4;
             const sx = Math.cos(ang) * 12.2;

@@ -81,7 +81,7 @@ El Creador de Pueblos tiene el estilo **Pueblo Andaluz** y el tipo de casas **«
 - las **flores** (geranios rojos, rosas, blancos, morados, naranjas), la **buganvilla**, las **macetas** (de barro o azules) y la **forja**;
 - la **fachada en espejo** (la puerta y las ventanas al otro lado), además del tamaño y el giro de siempre.
 
-Con el trazado **«casas adosadas»** salen calles de casas en hilera. El pueblo del escenario de ejemplo es andaluz.
+Con el trazado **«casas adosadas»** salen calles de casas en hilera. En el estilo andaluz la plaza es de **adoquín de granito** con cintas de piedra clara (sin mosaico) y no hay puestos de mercado (`cfg.puestos` los fuerza en cualquier estilo). El pueblo del escenario de ejemplo es andaluz, grande (tamaño 5) y con todos los solares ocupados.
 
 `Escenario.atravesarPueblo(esc, pueblo, camino)` hace que un camino cruce un pueblo: le pone dos salidas (`cfg.exits`) donde el camino entra y sale de su terreno y desvía el trazado por la plaza. Dentro del terreno del pueblo la cinta del camino no se dibuja (se usan las calles del pueblo).
 
