@@ -300,3 +300,26 @@ test('atravesarPueblo: la pista entra por una salida, rodea la plaza y sale por 
   const dmin = Math.min(...mu.map(m => Math.hypot(m.x, m.z)));
   assert.ok(dmin > 8 && dmin < 16, 'rodea la plaza: ' + dmin);
 });
+
+test('nuevas plantillas de rally y helpers alturaCalzadaEn / aguaEn', () => {
+  for (const id of ['rally_sierra', 'rally_desierto', 'rally_otono', 'rally_costa']) {
+    const esc = E.crear({ plantilla: id, semilla: 4242, res: 129 });
+    assert.ok(esc.elementos.some(e => e.tipo === 'inicio'), id + ' tiene inicio');
+    assert.ok(esc.elementos.some(e => e.tipo === 'meta'), id + ' tiene meta');
+    const cps = esc.elementos.filter(e => e.tipo === 'checkpoint');
+    assert.strictEqual(cps.length, 5, id + ' tiene 5 checkpoints');
+    const pista = esc.caminos.find(c => !E.esRio(c));
+    assert.ok(pista && pista.cerrado, id + ' tiene circuito cerrado');
+    const mu = E.muestrearCamino(pista, 8);
+    if (id === 'rally_costa') {
+      assert.ok(mu.every(p => E.alturaEn(esc, p.x, p.z) > 0.3), 'rally_costa no se hunde en el mar');
+    }
+    const ini = esc.elementos.find(e => e.tipo === 'inicio');
+    const cal = E.alturaCalzadaEn(esc, ini.x, ini.z);
+    assert.ok(Number.isFinite(cal.y), id + ' alturaCalzadaEn válida');
+    assert.ok(cal.camino && cal.superficie, id + ' detecta superficie en inicio');
+  }
+  const e = E.crearVacio({ tam: 400, res: 65 });
+  e.terreno.agua = { activa: true, nivel: 2, color: null };
+  assert.strictEqual(E.aguaEn(e, 0, 0), 2);
+});
