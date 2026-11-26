@@ -186,10 +186,11 @@
   registrarTipo({ id: 'roca', nombre: 'Roca', icono: '🪨', grupo: 'naturaleza', props: { tam: 3, color: '#7d7a74', forma: 'variada', piedra: 'mezcla' },
     campos: [NUM('tam', 'Tamaño', 0.2, 100), { k: 'forma', n: 'Forma', t: 'sel', op: FORMAS_ROCA }, { k: 'piedra', n: 'Piedra', t: 'sel', op: PIEDRAS }, COLOR('color', 'Tinte')] });
   registrarTipo({ id: 'bosque', nombre: 'Bosque (área)', icono: '🌲', grupo: 'naturaleza', forma: 'area', radioDefecto: 40,
-    props: { radio: 40, especie: 'mixto', densidad: 6, tamano: 1, altoMin: 6, altoMax: 13, rocas: 0.15, semilla: 1 },
+    props: { radio: 40, especie: 'mixto', densidad: 6, tamano: 1, altoMin: 6, altoMax: 13, rocas: 0.15, holgura: 0, semilla: 1 },
     campos: [NUM('radio', 'Radio', 5, 2000, 1), { k: 'especie', n: 'Especie', t: 'sel', op: ESPECIES }, NUM('densidad', 'Árboles cada 1000 m²', 0.2, 40, 0.2),
       NUM('tamano', 'Tamaño de los árboles con modelo (×)', 0.3, 3, 0.05),
-      NUM('altoMin', 'Altura mínima (sencillos)', 1, 60), NUM('altoMax', 'Altura máxima (sencillos)', 1, 60), NUM('rocas', 'Rocas (proporción)', 0, 1, 0.05), NUM('semilla', 'Semilla', 1, 99999, 1)] });
+      NUM('altoMin', 'Altura mínima (sencillos)', 1, 60), NUM('altoMax', 'Altura máxima (sencillos)', 1, 60), NUM('rocas', 'Rocas (proporción)', 0, 1, 0.05),
+      NUM('holgura', 'Espacio libre junto a los caminos (m)', 0, 40, 0.5), NUM('semilla', 'Semilla', 1, 99999, 1)] });
   registrarTipo({ id: 'rocas', nombre: 'Pedregal (área)', icono: '⛰', grupo: 'naturaleza', forma: 'area', radioDefecto: 25,
     props: { radio: 25, cantidad: 30, tamMin: 0.6, tamMax: 4, color: '#7d7a74', forma: 'variada', piedra: 'mezcla', semilla: 1 },
     campos: [NUM('radio', 'Radio', 2, 1000, 1), NUM('cantidad', 'Cantidad', 1, 600, 1), NUM('tamMin', 'Tamaño mínimo', 0.1, 50, 0.1), NUM('tamMax', 'Tamaño máximo', 0.1, 80, 0.1),
@@ -361,7 +362,7 @@
     const base = Math.max(r.min, agua === -Infinity ? r.min : agua);
     const span = Math.max(1, r.max - base);
     const rel = (h - base) / span;
-    if (rel > 0.82 && r.max - base > 40) return b.cima;
+    if (t.cotaNieve != null ? h > t.cotaNieve : (rel > 0.82 && r.max - base > 40)) return b.cima; // cotaNieve: altura fija (opcional)
     if (rel > 0.6 && s > 0.45) return b.alto;
     return b.medio;
   }
@@ -675,11 +676,15 @@
   }
 
   // Ajusta el terreno al camino: lo allana a lo ancho con su rasante y suaviza los taludes.
+  // opts: { margen (m de talud), ventana (muestras de la media móvil de la rasante), pintar,
+  //         perfil(d, y) → y: retoca la rasante a d metros del inicio (cambios de rasante, saltos, terraplenes…),
+  //         respetar(d) → true: deja el terreno como está ahí (p. ej. bajo un puente, donde pasa el río) }
   function ajustarTerrenoACamino(esc, camino, opts) {
     opts = opts || {};
     const mu = muestrearCamino(camino, Math.max(1, paso(esc) * 0.75));
     if (mu.length < 2) return null;
     const ras = rasante(esc, mu, opts.ventana || Math.round(10 / Math.max(1, paso(esc) * 0.75)), camino.cerrado);
+    if (opts.perfil && !esRio(camino)) for (let k = 0; k < ras.length; k++) ras[k] = opts.perfil(mu[k].d, ras[k]);
     const t = esc.terreno, r = t.res, p = paso(esc);
     const rio = esRio(camino), prof = rio ? profundidadRio(camino) : 0;
     let margenK = null;
@@ -714,6 +719,7 @@
       if (bk < 0 || best > lim) continue;
       const mk = margenK ? Math.min(80, margenK[bk]) : margen;
       if (best > medio + mk) continue;
+      if (opts.respetar && opts.respetar(mu[bk].d)) continue;
       const w = best <= medio ? 1 : suave(1 - (best - medio) / mk);
       const k = j * r + i;
       if (rio) {
@@ -923,6 +929,45 @@
       });
     }
     return out;
+  }
+
+  // Terraplenes de los puentes de un camino: sube el terreno del camino antes y después de cada puente hasta la altura
+  // del tablero, con una pendiente suave (como mucho «pendiente», 7 % por defecto). Sin ellos el camino tiene que subir
+  // al tablero en unos pocos metros (una rampa de salto). El terreno bajo el puente (el cauce) no se toca.
+  // opts: los de ajustarTerrenoACamino (su perfil y respetar se combinan con los de los puentes). Sin puentes: null.
+  function terraplenesPuentes(esc, c, opts) {
+    opts = opts || {};
+    const pu = puentesDeCamino(esc, c);
+    if (!pu.length) return null;
+    const mu = muestrearCamino(c, 2), total = mu[mu.length - 1].d;
+    const pend = opts.pendiente || 0.07;
+    const largos = pu.map(b => {
+      const sube = d => { const q = puntoEnD(mu, d, c.cerrado); return Math.max(0, b.alto - alturaEn(esc, q.x, q.z)); };
+      return { b, antes: clamp(sube(b.d0 - 6) / pend, 12, 90), despues: clamp(sube(b.d1 + 6) / pend, 12, 90) };
+    });
+    const dist = (d, a) => { let x = d - a; if (c.cerrado) x = ((x % total) + total * 1.5) % total - total / 2; return x; };
+    const perfil = (d, y) => {
+      if (opts.perfil) y = opts.perfil(d, y);
+      for (const { b, antes, despues } of largos) {
+        const r0 = dist(d, b.d0), r1 = dist(d, b.d1);
+        let f = 0;
+        if (r0 < 0 && r0 > -antes) f = suave(1 + r0 / antes);
+        else if (r1 > 0 && r1 < despues) f = suave(1 - r1 / despues);
+        else if (r0 >= 0 && r1 <= 0) f = 1;
+        if (f > 0) y = Math.max(y, lerp(y, b.alto - 0.1, f));
+      }
+      return y;
+    };
+    const respetar = d => (opts.respetar && opts.respetar(d)) || largos.some(({ b }) => dist(d, b.d0) > -1.5 && dist(d, b.d1) < 1.5);
+    return ajustarTerrenoACamino(esc, c, Object.assign({}, opts, { perfil, respetar }));
+  }
+  function puntoEnD(mu, d, cerrado) {
+    const total = mu[mu.length - 1].d;
+    if (cerrado) d = ((d % total) + total) % total; else d = clamp(d, 0, total);
+    let a = 0, b = mu.length - 1;
+    while (b - a > 1) { const m = (a + b) >> 1; if (mu[m].d < d) a = m; else b = m; }
+    const t = (d - mu[a].d) / Math.max(1e-6, mu[b].d - mu[a].d);
+    return { x: lerp(mu[a].x, mu[b].x, t), z: lerp(mu[a].z, mu[b].z, t) };
   }
 
   // Nivel del agua en (x, z) combinando mar/plano global, lagos y riachuelos (-Infinity si está seco)
@@ -1653,7 +1698,7 @@
     const esc = crearVacio(Object.assign({}, opts, { semilla, tam: opts.tam || pl.tam || 1024, bioma: opts.bioma || pl.bioma || 'templado', plantilla: pl.id }));
     esc.terreno.gen.semilla = semilla;
     pl.aplicar(esc, crearAzar(semilla * 31 + 7));
-    if (opts.nombre) esc.nombre = opts.nombre; else esc.nombre = pl.nombre + ' ' + semilla;
+    if (opts.nombre) esc.nombre = opts.nombre; else esc.nombre = pl.disenado ? pl.nombre : pl.nombre + ' ' + semilla; // los diseñados no dependen de la semilla
     return esc;
   }
 
@@ -1733,7 +1778,7 @@
     TIPOS_BARRERA, LADOS, largoCamino, enTramo, superficieEn, proyectarEnCamino, caminoEn,
     crearCamino, muestrearCamino, rasante, ajustarTerrenoACamino, materialCamino, distanciaACamino,
     dentroTerrenoPueblo, atravesarPueblo,
-    PUENTES, excavarLago, crucesCaminoRio, ajustarPuenteACamino, ponerPuentes, puentesDeCamino, aguaEn, alturaCalzadaEn,
+    PUENTES, excavarLago, crucesCaminoRio, ajustarPuenteACamino, ponerPuentes, puentesDeCamino, terraplenesPuentes, puntoEnD, aguaEn, alturaCalzadaEn,
     esRio, profundidadRio, nivelesRio, mitadTerrenoPueblo, puntoSalidaPueblo, anguloLocalPueblo, conectarCaminosPueblo,
     crearElemento, buscarElemento, buscarCamino, quitar, duplicarElemento, radioElemento, prepararPueblo, copiaProfunda,
     serializar, deserializar, remuestrear, bytesABase64, base64ABytes

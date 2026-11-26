@@ -9,6 +9,7 @@ Viene de la parte de edición del [Creador de Mundos RPG](https://github.com/nar
 | `index.html` + `js/editor.js` | **Editor de escenarios**. |
 | `visor.html` + `js/visor.js` | **Visor**: recorre el escenario con cámara libre, a pie o siguiendo un camino. |
 | `js/escenario-core.js` | Núcleo sin interfaz (terreno, pinceles, caminos, tipos de elemento, plantillas, guardado). Funciona en el navegador y en Node: el juego puede cargarlo para leer el escenario (`alturaEn`, `muestrearCamino`…). |
+| `js/rally-disenado.js` | Circuitos de rally **diseñados** (no aleatorios): trazado por vértices y radios con curvas de transición, relieve con formas, puentes y vados, barreras según la curva y el desnivel, bosques, pueblos… Registra cinco plantillas. Se carga después del núcleo. |
 | `js/escena-3d.js` | Dibujo 3D con three.js, compartido por editor y visor. Un dibujo por tipo de elemento (`registrarDibujo`). |
 | `js/vegetacion.js` | Árboles con modelo `.glb`: instancias, niveles de detalle, impostores y viento. |
 | `js/pradera.js`, `js/pradera-atlas.js` | Hierba, trigo, flores, hierba alta y bambú alrededor de la cámara (el atlas viene del Creador RPG). |
@@ -37,6 +38,35 @@ El escenario de ejemplo (el circuito de rally) **atraviesa un pueblo andaluz**: 
 3. **Panel derecho**: *Herramienta* (opciones de la herramienta), *Selección* (propiedades del elemento) y *Escenario* (hora, niebla, bioma, agua, generar terreno, tamaño, enlaces).
 4. **Guardado**: automático en el navegador. **📁 Escenarios** para abrir, duplicar o borrar; **💾 Exportar** / **📂 Importar** un `.escenario.json` (con los modelos importados dentro si quieres). `Ctrl+Z` / `Ctrl+Y` deshacen y rehacen.
 5. **▶ Visor** abre el escenario.
+
+### Circuitos de rally diseñados
+Cinco plantillas hechas a mano, como las haría un organizador (`js/rally-disenado.js`). Cada una es siempre igual
+(no dependen de la semilla):
+
+| Plantilla | Carácter |
+|---|---|
+| 🌾 **Campos de Castilla** | Tierra y grava rápidas entre trigales y dehesa al atardecer: salto en la recta de salida, subida al cerro, puente de piedra, horquilla al final de una recta larga, vado en la vaguada y pueblo blanco junto a la carretera. |
+| ⛰ **Puerto del Pinsapar** | Puerto de montaña: subida de asfalto con tres horquillas encadenadas (los tramos entre ellas suben en diagonal), cresta con vistas y bajada de grava entre pinsapos hasta el puente romano. |
+| 🌲 **Bosque Boreal** | Nieve entre pinsapos, curvas medias enlazadas y cuatro lomos largos para volar; puente de madera, vado y aldea nórdica. |
+| 🏜 **Rambla de Tabernas** | Desierto: saltos en las dunas, el cañón entre dos mesetas de paredes de roca, la rambla seca y un oasis con palmeras junto al poblado. |
+| 🌊 **Costa de los Acantilados** | Asfalto al borde del acantilado sobre el mar, puente de hierro sobre la cala y vuelta por grava entre pinos piñoneros. |
+
+Cómo se describe un circuito (`registrarCircuito({...})`):
+- **Trazado**: una poligonal de vértices con el radio de la curva en cada uno, como se diseñan las carreteras; las
+  curvas se enlazan con **transiciones** (la curvatura cambia poco a poco) y la vuelta cierra exacta.
+- **Relieve**: una base suave (solo detalle) más **formas** pensadas para el trazado: `colina`, `meseta`, `cresta`,
+  `vaguada`, `inclinar`.
+- **Rasante**: la del terreno suavizada, más los **cambios de rasante y saltos** que se piden (`rasante: [{ en, alto, largo }]`).
+- **Ríos**: se excavan primero; en cada cruce, **puente** (la carretera sigue en terraplén a la altura de las orillas y
+  el tablero queda a nivel, sin rampa de salto) o **vado** (la carretera baja al agua, 30 cm por debajo, con rampas suaves).
+- **Barreras con criterio**: paja (o lo que se diga) por fuera de las curvas cerradas, guardarraíl donde el terreno cae
+  a un lado, neumáticos en la salida, cinta donde está el público.
+- **Controles** en el tramo más recto cerca de donde se piden (nunca en plena curva, en un puente o en un vado).
+- **Entorno**: pasillos de bosque con espacio libre junto a la pista (`holgura`), hileras de árboles, pueblos junto a la
+  carretera (nunca encima) con su camino de acceso, campos de trigo o flores, ramblas, rocas, arcenes.
+
+`test/rally-disenado.test.js` comprueba en cada uno que la vuelta cierra, los controles van en orden, la carretera no
+pasa bajo el agua (salvo los vados), los puentes están a nivel y los pueblos no pisan la pista.
 
 ### Árboles con modelo 3D
 Las **rocas** (sueltas, en pedregales y entre los árboles de los bosques) llevan **fotos de roca real** (`assets/rocas/`, sacadas del atlas del terreno: ambientCG, CC0) proyectadas desde los tres ejes, sin costuras, con su relieve. Las formas se hacen por código y varían: **canto rodado, losa, bloque fracturado, aguja y roca partida**. En cada roca o pedregal se elige la forma («Variadas» las mezcla) y la piedra: granito con líquenes, caliza gris, con musgo, en estratos, arenisca ocre o pizarra oscura («Mezcla» combina dos parecidas). El color tiñe la foto; el gris de siempre la deja tal cual. Ninguna librería traía modelos de piedra, por eso las formas son generadas (`js/rocas.js`).
