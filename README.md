@@ -55,6 +55,20 @@ sea el tamaño de los accidentes; con detalle **alto** (513²), que estas planti
 dos puntos de la rejilla. En el 3D la textura de las paredes se proyecta de lado (no se estira) con franjas de estratos,
 y en el desierto, la selva y el volcán la roca toma el color del bioma. Pruebas en `test/relieve.test.js`.
 
+### Riscos y tipos de roca
+- **Roca con foto real en el terreno**: seis suelos nuevos con las mismas fotos que las rocas 3D (`assets/rocas/`):
+  **granito con líquenes, caliza gris, roca con musgo, roca en estratos, arenisca ocre y pizarra oscura**. Se pintan
+  con 🖌 Pintar y salen solos en las paredes, riscos y cumbres de roca. En *Escenario* → **Roca de las paredes y
+  riscos** se elige cuál: según el bioma (templado: granito; desierto: arenisca; nevado: caliza; volcánico: pizarra;
+  tropical: musgo; otoñal: estratos), **mezcla** de las dos del bioma por manchas de ~150 m, una piedra concreta o la
+  roca genérica de antes.
+- **Riscos en el relieve**: en *Generar terreno*, «Riscos en las laderas altas» (0–1) rompe las laderas empinadas de
+  la mitad alta en bandas de roca con paredes verticales y peñascos que asoman. Los valles y llanos no cambian.
+- **🪨 Riscos (área)** (➕ Colocar → Naturaleza): peñascos 3D en los sitios más empinados y altos del área: una
+  columna de roca de caras planas (o un bloque), lajas apoyadas alrededor y derrubios ladera abajo, de la piedra que se
+  elija o de la misma que las paredes del terreno. Se eligen cuántos y su altura; no se ponen sobre los caminos.
+- **Cordillera** y **Desfiladeros** ya traen riscos en las laderas, áreas de riscos en las cumbres y mezcla de rocas.
+
 ### Circuitos de rally diseñados
 Cinco plantillas hechas a mano, como las haría un organizador (`js/rally-disenado.js`). Cada una es siempre igual
 (no dependen de la semilla):

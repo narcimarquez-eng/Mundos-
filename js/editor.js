@@ -919,6 +919,7 @@ function panelEscenario() {
     deslizador('Nubes', esc.ambiente.nubes == null ? 0.4 : esc.ambiente.nubes, 0, 1, 0.01, (v, fin) => { esc.ambiente.nubes = v; escena.setNubes(v); if (fin) programarGuardado(); }, v => Math.round(v * 100) + '%'),
     deslizador('Niebla', esc.ambiente.niebla, 0, 1, 0.01, (v, fin) => { esc.ambiente.niebla = v; escena.setNiebla(v); if (fin) programarGuardado(); }, v => Math.round(v * 100) + '%'),
     selector('Bioma (colores automáticos)', t.bioma, Object.entries(E.BIOMAS).map(([k, b]) => [k, b.nombre]), v => { puntoDeshacer(); t.bioma = v; escena.actualizarTerreno(null, true); escena.construirAgua(); escena.reconstruirElementos(); programarGuardado(); }),
+    selector('Roca de las paredes y riscos', t.rocaPared || 'auto', E.ROCAS_PARED, v => { puntoDeshacer(); t.rocaPared = v; escena.actualizarTerreno(null, true); escena.reconstruirElementos(); programarGuardado(); }),
     selector('Bordes en el visor', t.bordes, [['cortado', 'Bloque (se ve el borde)'], ['infinito', 'Mar o niebla hasta el horizonte']], v => { t.bordes = v; programarGuardado(); }));
 
   cuerpo.append(titulo('Agua'),
@@ -935,6 +936,7 @@ function panelEscenario() {
     numero('Tamaño de los accidentes (m)', g.escala, 10, 20000, 10, v => { g.escala = v; }),
     numero('Altura (m)', g.altura, 0, 3000, 1, v => { g.altura = v; }),
     numero('Detalle (octavas)', g.octavas, 1, 8, 1, v => { g.octavas = v; }),
+    numero('Riscos en las laderas altas (0–1)', g.riscos || 0, 0, 1, 0.05, v => { g.riscos = v; }),
     numero('Desplazamiento vertical (m)', g.base || 0, -1000, 1000, 1, v => { g.base = v; }),
     numero('Semilla', g.semilla, 1, 99999, 1, v => { g.semilla = v; }),
     botones(boton('🎲 Semilla', () => { g.semilla = Math.floor(Math.random() * 99999) + 1; renderPanel(); }),

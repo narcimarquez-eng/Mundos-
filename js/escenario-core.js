@@ -114,15 +114,26 @@
     { id: 10, nombre: 'Musgo', color: '#3d5c2b' },
     { id: 11, nombre: 'Ceniza', color: '#34302e' },
     { id: 12, nombre: 'Hielo', color: '#b9d9ea' },
-    { id: 13, nombre: 'Baldosa', color: '#b3a48e' }
+    { id: 13, nombre: 'Baldosa', color: '#b3a48e' },
+    // Rocas con foto real (assets/rocas/, las mismas que las rocas 3D): paredes, riscos y cumbres
+    { id: 14, nombre: 'Granito', color: '#8a8580', piedra: 'granito' },
+    { id: 15, nombre: 'Caliza gris', color: '#a3a19c', piedra: 'gris' },
+    { id: 16, nombre: 'Roca con musgo', color: '#6e7357', piedra: 'musgo' },
+    { id: 17, nombre: 'Roca en estratos', color: '#9a8a76', piedra: 'estratos' },
+    { id: 18, nombre: 'Arenisca ocre', color: '#b48a5e', piedra: 'ocre' },
+    { id: 19, nombre: 'Pizarra oscura', color: '#4d4c4f', piedra: 'oscura' }
   ];
+  // Roca de las paredes, riscos y laderas de roca: material de una piedra
+  const MATERIAL_PIEDRA = { granito: 14, gris: 15, musgo: 16, estratos: 17, ocre: 18, oscura: 19 };
+  const ROCAS_PARED = [['auto', 'Según el bioma'], ['mezcla', 'Mezcla de dos (según el bioma)'], ['granito', 'Granito con líquenes'], ['gris', 'Caliza gris'],
+    ['musgo', 'Roca con musgo'], ['estratos', 'Roca en estratos'], ['ocre', 'Arenisca ocre'], ['oscura', 'Pizarra oscura'], ['roca', 'Roca genérica (la de antes)']];
   const BIOMAS = {
-    templado: { nombre: 'Templado', bajo: 5, medio: 1, alto: 4, cima: 6, empinado: 4, agua: '#2f6f8f' },
-    desierto: { nombre: 'Desierto', bajo: 5, medio: 5, alto: 2, cima: 4, empinado: 4, agua: '#2b8a8f', tintePared: [1.22, 0.86, 0.64] },
-    tropical: { nombre: 'Tropical', bajo: 5, medio: 1, alto: 10, cima: 4, empinado: 4, agua: '#1f9fa8', tintePared: [1.05, 0.92, 0.82] },
-    nevado: { nombre: 'Nevado', bajo: 9, medio: 6, alto: 6, cima: 12, empinado: 4, agua: '#3d6f86' },
-    volcanico: { nombre: 'Volcánico', bajo: 11, medio: 11, alto: 4, cima: 11, empinado: 4, agua: '#4a5a62', tintePared: [0.8, 0.74, 0.7] },
-    otono: { nombre: 'Otoñal', bajo: 3, medio: 2, alto: 4, cima: 6, empinado: 4, agua: '#356b7d' }
+    templado: { nombre: 'Templado', rocas: ['granito', 'gris'],  bajo: 5, medio: 1, alto: 4, cima: 6, empinado: 4, agua: '#2f6f8f' },
+    desierto: { nombre: 'Desierto', rocas: ['ocre', 'estratos'],  bajo: 5, medio: 5, alto: 2, cima: 4, empinado: 4, agua: '#2b8a8f', tintePared: [1.22, 0.86, 0.64] },
+    tropical: { nombre: 'Tropical', rocas: ['musgo', 'oscura'],  bajo: 5, medio: 1, alto: 10, cima: 4, empinado: 4, agua: '#1f9fa8', tintePared: [1.05, 0.92, 0.82] },
+    nevado: { nombre: 'Nevado', rocas: ['gris', 'granito'],  bajo: 9, medio: 6, alto: 6, cima: 12, empinado: 4, agua: '#3d6f86' },
+    volcanico: { nombre: 'Volcánico', rocas: ['oscura', 'gris'],  bajo: 11, medio: 11, alto: 4, cima: 11, empinado: 4, agua: '#4a5a62', tintePared: [0.8, 0.74, 0.7] },
+    otono: { nombre: 'Otoñal', rocas: ['estratos', 'musgo'],  bajo: 3, medio: 2, alto: 4, cima: 6, empinado: 4, agua: '#356b7d' }
   };
 
   // ---------------------------------------------------------------------------
@@ -195,6 +206,11 @@
     props: { radio: 25, cantidad: 30, tamMin: 0.6, tamMax: 4, color: '#7d7a74', forma: 'variada', piedra: 'mezcla', semilla: 1 },
     campos: [NUM('radio', 'Radio', 2, 1000, 1), NUM('cantidad', 'Cantidad', 1, 600, 1), NUM('tamMin', 'Tamaño mínimo', 0.1, 50, 0.1), NUM('tamMax', 'Tamaño máximo', 0.1, 80, 0.1),
       { k: 'forma', n: 'Formas', t: 'sel', op: FORMAS_ROCA }, { k: 'piedra', n: 'Piedra', t: 'sel', op: PIEDRAS }, COLOR('color', 'Tinte'), NUM('semilla', 'Semilla', 1, 99999, 1)] });
+  registrarTipo({ id: 'riscos', nombre: 'Riscos (área)', icono: '🪨', grupo: 'naturaleza', forma: 'area', radioDefecto: 60,
+    props: { radio: 60, cantidad: 12, altoMin: 6, altoMax: 22, piedra: 'auto', pendiente: true, semilla: 1 },
+    campos: [NUM('radio', 'Radio', 5, 2000, 1), NUM('cantidad', 'Riscos', 1, 200, 1), NUM('altoMin', 'Altura mínima (m)', 1, 120, 0.5), NUM('altoMax', 'Altura máxima (m)', 1, 160, 0.5),
+      { k: 'piedra', n: 'Piedra', t: 'sel', op: [['auto', 'La de las paredes del terreno']].concat(PIEDRAS.filter(q => q[0] !== 'mezcla')).concat([['mezcla', 'Mezcla']]) },
+      { k: 'pendiente', n: 'En las laderas empinadas y cumbres', t: 'bool' }, NUM('semilla', 'Semilla', 1, 99999, 1)] });
   registrarTipo({ id: 'lago', nombre: 'Lago (área)', icono: '💧', grupo: 'naturaleza', forma: 'area', radioDefecto: 30,
     props: { radio: 30, nivel: 0, color: '#2f6f8f', excavar: true, forma: 1 },
     campos: [NUM('radio', 'Radio', 3, 2000, 1), NUM('nivel', 'Altura del agua (sobre el suelo del centro)', -20, 20, 0.1), COLOR('color', 'Color del agua'),
@@ -355,17 +371,36 @@
     const t = esc.terreno, b = BIOMAS[t.bioma] || BIOMAS.templado;
     const h = t.alturas[j * t.res + i];
     const s = pendienteIdx(esc, i, j);
-    if (s > 0.85) return b.empinado;
+    if (s > 0.85) return rocaPared(esc, i, j, b.empinado);
     const agua = t.agua && t.agua.activa ? t.agua.nivel : -Infinity;
     if (h < agua + 1.2) return b.bajo;
     const r = rango || rangoAlturas(esc);
     const base = Math.max(r.min, agua === -Infinity ? r.min : agua);
     const span = Math.max(1, r.max - base);
     const rel = (h - base) / span;
-    if (t.cotaNieve != null ? h > t.cotaNieve : (rel > 0.82 && r.max - base > 40)) return b.cima; // cotaNieve: altura fija (opcional)
-    if (rel > 0.6 && s > 0.45) return b.alto;
+    if (t.cotaNieve != null ? h > t.cotaNieve : (rel > 0.82 && r.max - base > 40)) return b.cima === 4 ? rocaPared(esc, i, j, 4) : b.cima; // cotaNieve: altura fija (opcional)
+    if (rel > 0.6 && s > 0.45) return b.alto === 4 ? rocaPared(esc, i, j, 4) : b.alto;
     return b.medio;
   }
+  // Piedra de las paredes en (i, j) según terreno.rocaPared: 'auto' (la del bioma), 'mezcla' (dos del bioma por manchas
+  // de ~150 m), una piedra concreta o 'roca' (la genérica de antes, material 4)
+  const ruidoRocas = new Map();
+  function piedraPared(esc, x, z) {
+    const t = esc.terreno, b = BIOMAS[t.bioma] || BIOMAS.templado, modo = t.rocaPared || 'auto';
+    if (modo === 'roca') return null;
+    if (MATERIAL_PIEDRA[modo]) return modo;
+    const par = b.rocas || ['granito', 'gris'];
+    if (modo !== 'mezcla') return par[0];
+    const sem = (t.gen && t.gen.semilla) || 1;
+    let N = ruidoRocas.get(sem);
+    if (!N) { N = crearRuido(sem * 131 + 7); ruidoRocas.set(sem, N); }
+    return N.fbm(x / 150, z / 150, 2) > 0.05 ? par[1] : par[0];
+  }
+  function rocaPared(esc, i, j, porDefecto) {
+    const pd = piedraPared(esc, xDe(esc, i), xDe(esc, j));
+    return pd ? MATERIAL_PIEDRA[pd] : porDefecto;
+  }
+
   function materialEn(esc, i, j, rango) {
     const m = esc.terreno.materiales[j * esc.terreno.res + i];
     return m || materialAuto(esc, i, j, rango);
@@ -534,7 +569,39 @@
         t.alturas[j * r + i] = h + base;
       }
     }
+    if (g.riscos > 0) ponerRiscos(esc, N, g.riscos);
     return esc;
+  }
+
+  // Riscos en las laderas altas y empinadas: bandas de roca con paredes verticales (escalones de la ladera) y
+  // peñascos que asoman. riscos: 0–1. Solo donde ya hay pendiente y altura, así los valles y llanos no cambian.
+  function ponerRiscos(esc, N, fuerza) {
+    const t = esc.terreno, r = t.res, h = t.alturas, p = paso(esc), m = t.tam / 2;
+    const orig = h.slice();
+    const rg = rangoAlturas(esc), agua = t.agua && t.agua.activa ? t.agua.nivel : rg.min;
+    const span = Math.max(1, rg.max - Math.max(rg.min, agua));
+    const escalon = clamp(span * 0.06, 4, 30);                // alto de cada banda de roca
+    const L = clamp(escalon * 3, 12, 90);                      // tamaño de los peñascos
+    for (let j = 1; j < r - 1; j++) for (let i = 1; i < r - 1; i++) {
+      const k = j * r + i, h0 = orig[k];
+      const dx = (orig[k + 1] - orig[k - 1]) / (2 * p), dz = (orig[k + r] - orig[k - r]) / (2 * p);
+      const s = Math.hypot(dx, dz);
+      const rel = (h0 - Math.max(rg.min, agua)) / span;
+      const x = -m + i * p, z = -m + j * p;
+      // dónde hay riscos: laderas de más de ~25° en la mitad alta, con manchas para que no sea todo igual
+      const mancha = suaveEntre(-0.15, 0.2, N.fbm(x / (L * 6) + 40.3, z / (L * 6) - 17.1, 2));
+      const w = fuerza * suaveEntre(0.35, 0.75, s) * suaveEntre(0.25, 0.55, rel) * mancha;
+      if (w <= 0.001) continue;
+      // escalones: la ladera se rompe en rellanos y paredes (desplazados con ruido para que no sean curvas de nivel)
+      const hd = h0 + N.ruido(x / (L * 1.7) + 7.7, z / (L * 1.7)) * escalon * 0.6;
+      const kk = Math.floor(hd / escalon), fr = hd / escalon - kk;
+      const escal = (kk + suaveEntre(0.68, 0.9, fr)) * escalon - (hd - h0);
+      // peñascos: crestas de un ruido que asoman como bloques de borde vivo
+      const c = 1 - Math.abs(N.ruido(x / L - 3.1, z / L + 9.4));
+      const pena = suaveEntre(0.78, 0.86, c) * escalon * 0.9 + suaveEntre(0.9, 0.97, c) * escalon * 0.6;
+      h[k] = lerp(h0, escal, Math.min(1, w * 1.2)) + pena * w;
+    }
+    olvidarRango(esc);
   }
 
   // ---------------------------------------------------------------------------
@@ -1828,7 +1895,9 @@
   registrarPlantilla({ id: 'montanas', nombre: 'Cordillera', icono: '🏔', desc: 'Montañas escarpadas con cumbres nevadas y un valle.', tam: 4096, bioma: 'templado',
     aplicar(esc, rng) {
       esc.terreno.agua = { activa: true, nivel: 8, color: null };
-      generarTerreno(esc, { tipo: 'montanas', escala: 1100, altura: 420, octavas: 7 });
+      esc.terreno.rocaPared = 'mezcla';
+      generarTerreno(esc, { tipo: 'montanas', escala: 1100, altura: 420, octavas: 7, riscos: 0.8 });
+      ponerRiscosEnCumbres(esc, rng, 10, 160, 10, 45);
       for (let k = 0; k < 18; k++) { const s = buscarSitio(esc, rng, (x, z) => { const h = alturaEn(esc, x, z); return h > 12 && h < 150; }); if (s) crearElemento(esc, 'bosque', s.x, s.z, { radio: rng.int(60, 160), especie: rng.pick(['pinsapo', 'pino_pinonero']), densidad: rng.range(1.5, 4) }); }
     } });
 
@@ -1848,6 +1917,18 @@
 
   // Relieve llamativo: cañones, acantilados, desfiladeros, mesas y tepuis. Piden detalle alto (513², resMin) para que
   // las paredes queden verticales: con menos puntos serían laderas. El diálogo «Nuevo» lo propone al elegirlas.
+  // Áreas de riscos en las laderas altas y empinadas (los peñascos 3D eligen dentro los sitios más empinados)
+  function ponerRiscosEnCumbres(esc, rng, n, radio, altoMin, altoMax) {
+    const r = rangoAlturas(esc), corte = r.min + (r.max - r.min) * 0.5;
+    const puestos = [];
+    for (let k = 0; k < n; k++) {
+      const s = buscarSitio(esc, rng, (x, z) => alturaEn(esc, x, z) > corte && sobreAgua(esc, x, z, 3)
+        && puestos.every(p => Math.hypot(p.x - x, p.z - z) > radio * 1.5), 400);
+      if (!s) continue;
+      puestos.push(s);
+      crearElemento(esc, 'riscos', s.x, s.z, { radio, cantidad: Math.round(radio / 12), altoMin, altoMax, piedra: 'auto', pendiente: true, semilla: rng.int(1, 99999) });
+    }
+  }
   function bosquesDonde(esc, rng, n, filtro, props) {
     for (let k = 0; k < n; k++) { const s = buscarSitio(esc, rng, filtro, 300); if (s) crearElemento(esc, 'bosque', s.x, s.z, props(rng)); }
   }
@@ -1878,7 +1959,9 @@
   registrarPlantilla({ id: 'desfiladeros', nombre: 'Desfiladeros', icono: '⛰', resMin: 513, tam: 2048, bioma: 'templado',
     desc: 'Montañas con crestas cortadas por gargantas estrechas y profundas de paredes verticales.',
     aplicar(esc, rng) {
-      generarTerreno(esc, { tipo: 'desfiladero', escala: 700, altura: 240, octavas: 6 });
+      esc.terreno.rocaPared = 'mezcla';
+      generarTerreno(esc, { tipo: 'desfiladero', escala: 700, altura: 240, octavas: 6, riscos: 0.7 });
+      ponerRiscosEnCumbres(esc, rng, 8, 90, 6, 26);
       const r = rangoAlturas(esc);
       bosquesDonde(esc, rng, 16, (x, z) => alturaEn(esc, x, z) < r.min + (r.max - r.min) * 0.45 && llano(esc, x, z, 20), g => ({ radio: g.int(40, 120), especie: g.pick(['pinsapo', 'liquidambar']), densidad: g.range(1.5, 3.5) }));
     } });
@@ -1977,7 +2060,7 @@
   }
 
   const API = {
-    FORMATO, VERSION, RPG_BASE, MATERIALES, BIOMAS, TIPOS, GRUPOS, PLANTILLAS, TIPOS_TERRENO, TIPOS_CAMINO, ESPECIES, ESTILOS_PUEBLO, ARBOLES_GLB, MEZCLA_BIOMA, registrarArbolGlb,
+    FORMATO, VERSION, RPG_BASE, MATERIALES, MATERIAL_PIEDRA, ROCAS_PARED, piedraPared, BIOMAS, TIPOS, GRUPOS, PLANTILLAS, TIPOS_TERRENO, TIPOS_CAMINO, ESPECIES, ESTILOS_PUEBLO, ARBOLES_GLB, MEZCLA_BIOMA, registrarArbolGlb,
     mulberry32, crearAzar, crearRuido, hashTexto, clamp, lerp,
     registrarTipo, registrarPlantilla, leerRuta, escribirRuta, cfgPuebloPorDefecto, radioPueblo,
     crearVacio, crear, generarTerreno, paso, idx, xDe, aRejilla, dentro, alturaEn, sueloEn, pendienteIdx, rangoAlturas, rangoCache, olvidarRango,

@@ -188,7 +188,7 @@ function texturaTexto(texto, fondo, color) {
 
 const BLANCO_SUELO = new THREE.Color(1.02, 1.02, 1.0);
 const COLOR_VEG = { hierba: new THREE.Color('#8fe04a'), trigo: new THREE.Color('#f0c43a'), flores: new THREE.Color('#ef5fae'), hierbaAlta: new THREE.Color('#2f8f3a'), bambu: new THREE.Color('#b6ef6a') };
-const COLOR_AREA = { pueblo: '#f5c542', zona: '#e74c3c', bosque: '#2ecc71', rocas: '#95a5a6', lago: '#3498db' };
+const COLOR_AREA = { pueblo: '#f5c542', zona: '#e74c3c', bosque: '#2ecc71', rocas: '#95a5a6', riscos: '#c08a52', lago: '#3498db' };
 const COLOR_ZONA = { caza: '#e67e22', elite: '#9b59b6', jefe: '#c0392b', pvp: '#e84393', segura: '#2ecc71', arena: '#3498db' };
 
 // ---------------------------------------------------------------------------
@@ -330,6 +330,89 @@ registrarDibujo('rocas', (el, ctx) => {
   const p = el.props;
   const g = dispersar(el, ctx, Math.min(2000, p.cantidad | 0), pts => instanciasRocas(pts, el, ctx, p.tamMin, p.tamMax, p.color, { forma: p.forma, piedra: p.piedra, semilla: p.semilla }));
   g.userData.sinEscala = true; return g;
+});
+// Riscos: peñascos de roca con foto real que asoman de las laderas empinadas y las cumbres. Cada risco es una
+// aguja o un bloque grande, unas lajas apoyadas alrededor y derrubios ladera abajo, de la misma piedra.
+function alturaGeo(geo) { if (!geo.boundingBox) geo.computeBoundingBox(); return Math.max(0.3, geo.boundingBox.max.y); }
+registrarDibujo('riscos', (el, ctx) => {
+  const p = el.props, esc = ctx.esc, rng = E.crearAzar((p.semilla || 1) * 7 + 3);
+  const agua = esc.terreno.agua.activa ? esc.terreno.agua.nivel : -Infinity;
+  const caminos = ctx.muestrasCaminos();
+  const pend = (x, z) => { const e = 2; return Math.hypot(E.alturaEn(esc, x + e, z) - E.alturaEn(esc, x - e, z), E.alturaEn(esc, x, z + e) - E.alturaEn(esc, x, z - e)) / (2 * e); };
+  // candidatos: en «laderas y cumbres» se quedan los más empinados y altos
+  const cand = [];
+  const n = Math.max(1, Math.min(200, p.cantidad | 0));
+  for (let k = 0; k < n * 14; k++) {
+    const a = rng.next() * Math.PI * 2, d = Math.sqrt(rng.next()) * p.radio;
+    const x = el.x + Math.cos(a) * d, z = el.z + Math.sin(a) * d;
+    if (!E.dentro(esc, x, z)) continue;
+    const y = E.alturaEn(esc, x, z);
+    if (y < agua + 1) continue;
+    if (caminos.some(c => c.cerca(x, z, p.altoMax * 0.4 + 3))) continue;
+    cand.push({ x, z, y, s: pend(x, z), v: rng.next() });
+  }
+  if (p.pendiente !== false) {
+    const ys = cand.map(c => c.y), y0 = Math.min(...ys), y1 = Math.max(...ys);
+    cand.forEach(c => { c.nota = Math.min(1.5, c.s) + 0.6 * (c.y - y0) / Math.max(1, y1 - y0) + c.v * 0.25; });
+    cand.sort((a, b) => b.nota - a.nota);
+  }
+  const elegidos = [], sep = Math.max(4, (p.altoMin + p.altoMax) * 0.45);
+  for (const c of cand) {
+    if (elegidos.length >= n) break;
+    if (elegidos.some(o => Math.hypot(o.x - c.x, o.z - c.z) < sep)) continue;
+    elegidos.push(c);
+  }
+  const mezcla = piedrasDe('mezcla', p.semilla || 1);
+  const piedraDe = (x, z) => p.piedra === 'mezcla' ? mezcla[Math.floor(rng.next() * mezcla.length)]
+    : p.piedra && p.piedra !== 'auto' ? p.piedra : (E.piedraPared(esc, x, z) || 'granito');
+  // piezas: { forma, variante, piedra, x, y, z, alto, ancho, giro, incl: [x, z] }
+  const piezas = [];
+  const suelo = (x, z, r) => Math.min(E.alturaEn(esc, x, z), E.alturaEn(esc, x + r, z), E.alturaEn(esc, x - r, z), E.alturaEn(esc, x, z + r), E.alturaEn(esc, x, z - r));
+  for (const c of elegidos) {
+    const H = p.altoMin + (p.altoMax - p.altoMin) * Math.pow(rng.next(), 0.7);
+    const piedra = piedraDe(c.x, c.z);
+    // ladera abajo
+    const e = 2, gx = E.alturaEn(esc, c.x + e, c.z) - E.alturaEn(esc, c.x - e, c.z), gz = E.alturaEn(esc, c.x, c.z + e) - E.alturaEn(esc, c.x, c.z - e);
+    const gl = Math.hypot(gx, gz) || 1, bx = -gx / gl, bz = -gz / gl;
+    const ancho = H * (0.3 + rng.next() * 0.18);
+    const principal = rng.next() < 0.75 ? 'risco' : 'bloque';
+    piezas.push({ forma: principal, variante: Math.floor(rng.next() * 2), piedra, x: c.x, z: c.z, y: suelo(c.x, c.z, ancho * 0.5), alto: H, ancho, giro: rng.next() * Math.PI * 2, incl: [bx * 0.1, bz * 0.1] });
+    const nLajas = 2 + Math.floor(rng.next() * 3);
+    for (let k = 0; k < nLajas; k++) {
+      const a = rng.next() * Math.PI * 2, d = ancho * (0.55 + rng.next() * 0.6);
+      const x = c.x + Math.cos(a) * d, z = c.z + Math.sin(a) * d, h = H * (0.3 + rng.next() * 0.4), w = h * (0.5 + rng.next() * 0.35);
+      piezas.push({ forma: rng.next() < 0.45 ? 'risco' : rng.next() < 0.5 ? 'partida' : 'bloque', variante: Math.floor(rng.next() * 2), piedra, x, z, y: suelo(x, z, w * 0.5), alto: h, ancho: w,
+        giro: rng.next() * Math.PI * 2, incl: [Math.cos(a) * 0.22, Math.sin(a) * 0.22] });
+    }
+    const nCantos = 3 + Math.floor(rng.next() * 5);
+    for (let k = 0; k < nCantos; k++) {
+      const d = ancho * (1.2 + rng.next() * 2.2), lat = (rng.next() - 0.5) * ancho * 2;
+      const x = c.x + bx * d - bz * lat, z = c.z + bz * d + bx * lat, h = H * (0.05 + rng.next() * 0.08);
+      piezas.push({ forma: rng.next() < 0.5 ? 'canto' : 'losa', variante: Math.floor(rng.next() * 2), piedra, x, z, y: E.alturaEn(esc, x, z), alto: h, ancho: h * 1.6, giro: rng.next() * Math.PI * 2, incl: [0.15, 0.1] });
+    }
+  }
+  const g = new THREE.Group();
+  const grupos = new Map();
+  for (const q of piezas) { const k = q.forma + q.variante + q.piedra; if (!grupos.has(k)) grupos.set(k, []); grupos.get(k).push(q); }
+  const m4 = new THREE.Matrix4(), q4 = new THREE.Quaternion(), s3 = new THREE.Vector3(), p3 = new THREE.Vector3(), eu = new THREE.Euler(), col = new THREE.Color();
+  for (const lista of grupos.values()) {
+    const { forma, variante, piedra } = lista[0];
+    const geo = geoRocaForma(forma, variante), hg = alturaGeo(geo);
+    if (!geo.boundingBox) geo.computeBoundingBox();
+    const ag = Math.max(0.3, geo.boundingBox.max.x - geo.boundingBox.min.x);
+    const im = new THREE.InstancedMesh(geo, materialRoca(piedra, 3.2), lista.length);
+    lista.forEach((q, k) => {
+      eu.set(q.incl[1], q.giro, -q.incl[0]);
+      p3.set(q.x - el.x, q.y - ctx.baseY, q.z - el.z); q4.setFromEuler(eu);
+      s3.set(q.ancho / ag, q.alto / hg, q.ancho / ag * (0.8 + ((k * 0.37) % 0.3)));
+      im.setMatrixAt(k, m4.compose(p3, q4, s3));
+      col.setScalar(0.88 + ((k * 0.618) % 1) * 0.2); im.setColorAt(k, col);
+    });
+    im.castShadow = true; im.receiveShadow = true; im.computeBoundingSphere();
+    g.add(im);
+  }
+  g.userData.sinEscala = true;
+  return g;
 });
 registrarDibujo('lago', (el, ctx) => {
   const p = el.props;

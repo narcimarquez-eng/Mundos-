@@ -77,3 +77,51 @@ test('plantillas de relieve: piden detalle alto si no se elige otro', () => {
     assert.ok(copia);
   }
 });
+
+test('rocas con foto real: materiales del suelo y roca de las paredes según el bioma o elegida', () => {
+  for (const [pd, id] of Object.entries(E.MATERIAL_PIEDRA)) {
+    const m = E.MATERIALES.find(x => x.id === id);
+    assert.ok(m && m.piedra === pd, pd);
+  }
+  const esc = E.crearVacio({ tam: 1024, res: 257, semilla: 4, bioma: 'desierto' });
+  E.generarTerreno(esc, { tipo: 'mesas', escala: 400, altura: 60, semilla: 4 });
+  const r = E.rangoCache(esc);
+  const paredes = modo => {
+    esc.terreno.rocaPared = modo;
+    const vistos = new Set();
+    for (let j = 1; j < 256; j++) for (let i = 1; i < 256; i++) if (E.pendienteIdx(esc, i, j) > 0.85) vistos.add(E.materialEn(esc, i, j, r));
+    return [...vistos];
+  };
+  assert.deepStrictEqual(paredes('auto'), [E.MATERIAL_PIEDRA.ocre], 'desierto: arenisca ocre');
+  assert.deepStrictEqual(paredes('oscura'), [E.MATERIAL_PIEDRA.oscura]);
+  assert.deepStrictEqual(paredes('roca'), [4], 'la roca genérica de antes');
+  assert.deepStrictEqual(paredes('mezcla').sort(), [E.MATERIAL_PIEDRA.ocre, E.MATERIAL_PIEDRA.estratos].sort(), 'mezcla: las dos del bioma');
+});
+
+test('riscos del relieve: solo en las laderas altas y empinadas', () => {
+  const base = () => { const e = E.crearVacio({ tam: 2048, res: 257, semilla: 8 }); return e; };
+  const a = base(), b = base();
+  E.generarTerreno(a, { tipo: 'montanas', escala: 700, altura: 300, semilla: 8 });
+  E.generarTerreno(b, { tipo: 'montanas', escala: 700, altura: 300, semilla: 8, riscos: 1 });
+  const r = E.rangoAlturas(a), span = r.max - r.min;
+  let cambiados = 0, bajosCambiados = 0;
+  for (let k = 0; k < a.terreno.alturas.length; k++) {
+    const d = Math.abs(a.terreno.alturas[k] - b.terreno.alturas[k]);
+    if (d > 0.5) { cambiados++; if (a.terreno.alturas[k] < r.min + span * 0.2) bajosCambiados++; }
+  }
+  assert.ok(cambiados > 500, 'hay riscos: ' + cambiados);
+  assert.strictEqual(bajosCambiados, 0, 'los valles no cambian');
+  const c = base(); E.generarTerreno(c, { tipo: 'montanas', escala: 700, altura: 300, semilla: 8, riscos: 1 });
+  assert.deepStrictEqual(Array.from(c.terreno.alturas), Array.from(b.terreno.alturas), 'determinista');
+});
+
+test('elemento «Riscos (área)» y plantillas de montaña con riscos', () => {
+  assert.ok(E.TIPOS.riscos && E.TIPOS.riscos.forma === 'area');
+  for (const id of ['montanas', 'desfiladeros']) {
+    const esc = E.crear({ plantilla: id, semilla: 6, res: 257 });
+    assert.ok(esc.elementos.some(e => e.tipo === 'riscos'), id + ' trae riscos');
+    assert.strictEqual(esc.terreno.rocaPared, 'mezcla');
+    const { escenario } = E.deserializar(JSON.stringify(E.serializar(esc)));
+    assert.strictEqual(escenario.terreno.rocaPared, 'mezcla', 'se guarda la roca de las paredes');
+  }
+});
