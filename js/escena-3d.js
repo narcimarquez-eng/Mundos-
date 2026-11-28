@@ -874,6 +874,7 @@ export class Escena3D {
     const cols = E.MATERIALES.map(m => new THREE.Color(m.color));
     if (!this._ruidoColor || this._ruidoColor.semilla !== t.gen.semilla) { this._ruidoColor = E.crearRuido((t.gen.semilla || 1) + 555); this._ruidoColor.semilla = t.gen.semilla; }
     const N = this._ruidoColor, p = E.paso(esc), m0 = -t.tam / 2;
+    const tinteP = (E.BIOMAS[t.bioma] || {}).tintePared || null;
     for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
       const k = j * r + i;
       if (!soloColor) pos.setY(k, t.alturas[k]);
@@ -884,6 +885,11 @@ export class Escena3D {
       const v = (0.94 + ((Math.imul(k, 2654435761) >>> 0) % 1000) / 1000 * 0.12) * (0.92 + mancha * 0.16);
       const calido = Math.max(0, N.ruido(x / 260 + 7, z / 260 - 3)) * 0.12;
       let cr = (c.r + calido * 0.5) * v, cg = (c.g + calido * 0.25) * v, cb = c.b * v;
+      // Paredes del bioma (arenisca roja en el desierto…): tinte sobre la roca de las pendientes fuertes
+      if (tinteP && !t.materiales[k]) {
+        const s = E.pendienteIdx(esc, i, j);
+        if (s > 0.85) { const f = Math.min(1, (s - 0.85) / 0.6); cr *= 1 + (tinteP[0] - 1) * f; cg *= 1 + (tinteP[1] - 1) * f; cb *= 1 + (tinteP[2] - 1) * f; }
+      }
       if (this.verVegetacion) { // en el editor, al pintar vegetación: color de lo que crece encima
         const veg = E.vegetacionEn(esc, x, z);
         if (veg) { const cv = COLOR_VEG[veg.tipo]; const f = 0.25 + 0.6 * veg.d; cr += (cv.r - cr) * f; cg += (cv.g - cg) * f; cb += (cv.b - cb) * f; }

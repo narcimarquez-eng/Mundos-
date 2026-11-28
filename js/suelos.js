@@ -127,8 +127,8 @@ export function materialTerreno(suelos, mezcla, esc) {
   m.userData.u = u;
   m.onBeforeCompile = sh => {
     Object.assign(sh.uniforms, u);
-    sh.vertexShader = 'varying vec3 vPosMundo;\n' + sh.vertexShader.replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\n vPosMundo = (modelMatrix * vec4(transformed, 1.0)).xyz;');
-    sh.fragmentShader = `varying vec3 vPosMundo;
+    sh.vertexShader = 'varying vec3 vPosMundo;\nvarying vec3 vNormMundo;\n' + sh.vertexShader.replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\n vPosMundo = (modelMatrix * vec4(transformed, 1.0)).xyz;\n vNormMundo = normalize(mat3(modelMatrix) * objectNormal);');
+    sh.fragmentShader = `varying vec3 vPosMundo; varying vec3 vNormMundo;
       uniform highp sampler2DArray uMezcla;
       uniform float uTam, uRes, uEscala;
       ${GLSL_CAPA}
@@ -143,11 +143,23 @@ export function materialTerreno(suelos, mezcla, esc) {
         vec2 tuv = q / uEscala;
         vec2 tdx = dFdx(tuv), tdy = dFdy(tuv);
         vec3 acc = vec3(0.0); float tot = 0.0;
-        for (int i = 0; i < 16; i++) { float w = pesos[i]; if (w > 0.01) { w = w * w; acc += muestraCapa(float(i), tuv, tdx, tdy) * w; tot += w; } }
+        // Paredes (acantilados, cañones): la textura se proyecta también de lado, así no se estira en vertical
+        vec3 nW = normalize(vNormMundo);
+        float pared = smoothstep(0.45, 0.75, 1.0 - abs(nW.y));
+        vec2 uvX = vPosMundo.zy / uEscala, uvZ = vPosMundo.xy / uEscala;
+        vec2 dxX = dFdx(uvX), dyX = dFdy(uvX), dxZ = dFdx(uvZ), dyZ = dFdy(uvZ);
+        float bx = abs(nW.x), bz = abs(nW.z); float bs = max(1e-4, bx + bz); bx /= bs; bz /= bs;
+        for (int i = 0; i < 16; i++) { float w = pesos[i]; if (w > 0.01) { w = w * w;
+          vec3 c = muestraCapa(float(i), tuv, tdx, tdy);
+          if (pared > 0.01) c = mix(c, muestraCapa(float(i), uvX, dxX, dyX) * bx + muestraCapa(float(i), uvZ, dxZ, dyZ) * bz, pared);
+          acc += c * w; tot += w; } }
         diffuseColor.rgb *= tot > 0.0 ? acc / tot : vec3(0.5);
+        // estratos: franjas horizontales algo onduladas en las paredes
+        float estrato = 0.86 + 0.2 * smoothstep(-0.4, 0.4, sin(vPosMundo.y * 0.55 + ruidoSuelo(q * 0.03) * 5.0)) + 0.06 * sin(vPosMundo.y * 2.1);
+        diffuseColor.rgb *= mix(1.0, estrato, pared);
       }`);
   };
-  m.customProgramCacheKey = () => 'terreno-capas-2';
+  m.customProgramCacheKey = () => 'terreno-capas-3';
   return m;
 }
 

@@ -18,7 +18,7 @@ let herramienta = 'ver';
 let pestana = 'herramienta';
 let sel = null;                 // id de elemento o camino seleccionado
 let caminoActivo = null;        // id del camino que se edita con la herramienta Caminos
-const pincel = { modo: 'subir', radio: 25, fuerza: 0.6, material: 1, objetivo: 0, capa: 'suelo', veg: 'hierba', densidad: 0.7 };
+const pincel = { modo: 'subir', radio: 25, fuerza: 0.6, material: 1, objetivo: 0, alto: 15, repisas: 2, escalon: 6, capa: 'suelo', veg: 'hierba', densidad: 0.7 };
 const colocar = { tipo: 'arbol', props: {} };
 const nuevoCamino = { tipo: 'tierra', ancho: 6, bordes: false };
 const nuevaBarrera = { tipo: 'cinta', lado: 'ambos', separacion: 2, tramo: 'asfalto' };
@@ -274,7 +274,7 @@ renderer.domElement.addEventListener('pointerdown', ev => {
     const p = puntoTerreno(ev);
     if (!p) return;
     puntoDeshacer();
-    trazo = { punto: p, region: null, objetivo: pincel.modo === 'aplanar' ? E.alturaEn(esc, p.x, p.z) : pincel.objetivo };
+    trazo = { punto: p, region: null, objetivo: ['aplanar', 'meseta', 'canon'].includes(pincel.modo) ? E.alturaEn(esc, p.x, p.z) : pincel.objetivo };
     renderer.domElement.setPointerCapture(ev.pointerId);
   } else if (herramienta === 'caminos') {
     const asa = asaCerca(ev);
@@ -318,7 +318,7 @@ function aplicarPincel(dt) {
   let reg;
   if (herramienta === 'esculpir') {
     const escalaF = pincel.modo === 'subir' || pincel.modo === 'bajar' || pincel.modo === 'ruido' ? pincel.fuerza * Math.max(4, pincel.radio * 0.35) * dt * 2.5 : Math.min(1, pincel.fuerza * dt * 6);
-    reg = E.esculpir(esc, { modo: pincel.modo, x: p.x, z: p.z, radio: pincel.radio, fuerza: escalaF, objetivo: trazo.objetivo, semilla: 7 });
+    reg = E.esculpir(esc, { modo: pincel.modo, x: p.x, z: p.z, radio: pincel.radio, fuerza: escalaF, objetivo: trazo.objetivo, semilla: 7, alto: pincel.alto, repisas: pincel.repisas, escalon: pincel.escalon });
     escena.actualizarTerreno(reg);
   } else if (pincel.capa === 'vegetacion') {
     reg = E.pintarVegetacion(esc, { x: p.x, z: p.z, radio: pincel.radio, tipo: pincel.veg, densidad: pincel.densidad });
@@ -602,11 +602,18 @@ function listaElementos() {
 }
 function panelEsculpir() {
   cuerpo.append(titulo('⛰ Esculpir el relieve'),
-    segmentado([['subir', '⬆ Subir'], ['bajar', '⬇ Bajar'], ['suavizar', '〰 Suavizar'], ['aplanar', '▭ Aplanar', 'Aplana a la altura donde empiezas'], ['nivel', '📏 A nivel', 'Lleva el terreno a una altura fija'], ['ruido', '✳ Rugoso']],
+    segmentado([['subir', '⬆ Subir'], ['bajar', '⬇ Bajar'], ['suavizar', '〰 Suavizar'], ['aplanar', '▭ Aplanar', 'Aplana a la altura donde empiezas'], ['nivel', '📏 A nivel', 'Lleva el terreno a una altura fija'], ['ruido', '✳ Rugoso'],
+      ['meseta', '⏫ Acantilado', 'Levanta una meseta con pared vertical en el borde (arrastra para alargarla)'], ['canon', '🏞 Cañón', 'Excava un cañón de fondo plano con paredes en escalones (arrastra para trazarlo)'], ['terrazas', '🪜 Terrazas', 'Convierte las laderas en escalones con paredes verticales']],
       pincel.modo, v => { pincel.modo = v; renderPanel(); }),
     deslizador('Radio', pincel.radio, 2, Math.max(60, Math.round(esc.terreno.tam / 6)), 1, v => { pincel.radio = v; }, v => v + ' m'),
     deslizador('Fuerza', pincel.fuerza, 0.05, 1, 0.05, v => { pincel.fuerza = v; }, v => Math.round(v * 100) + '%'));
   if (pincel.modo === 'nivel') cuerpo.append(numero('Altura objetivo (m)', pincel.objetivo, -500, 2000, 0.5, v => { pincel.objetivo = v; }));
+  if (pincel.modo === 'meseta' || pincel.modo === 'canon') {
+    cuerpo.append(deslizador(pincel.modo === 'meseta' ? 'Altura de la pared' : 'Profundidad', pincel.alto, 2, 200, 1, v => { pincel.alto = v; }, v => v + ' m'));
+    if (pincel.modo === 'canon') cuerpo.append(deslizador('Repisas en las paredes', pincel.repisas, 1, 5, 1, v => { pincel.repisas = v; }));
+    cuerpo.append(ayuda('La altura se mide desde donde empiezas el trazo, así todo el trazo queda al mismo nivel. Para paredes verticales usa «Detalle alto» (513²): con menos puntos salen laderas.'));
+  }
+  if (pincel.modo === 'terrazas') cuerpo.append(deslizador('Alto de cada escalón', pincel.escalon, 1, 60, 1, v => { pincel.escalon = v; }, v => v + ' m'));
   cuerpo.append(ayuda('Mantén pulsado y arrastra sobre el terreno. Botón derecho (o dos dedos) gira la vista.'));
 }
 function panelPintar() {
@@ -1093,7 +1100,7 @@ let plantillaElegida = 'vacio';
 $('btn-nuevo').addEventListener('click', () => {
   const cont = $('plantillas'); cont.innerHTML = '';
   for (const p of Object.values(E.PLANTILLAS)) {
-    cont.append(h('button', { type: 'button', class: p.id === plantillaElegida ? 'activa' : '', on: { click: () => { plantillaElegida = p.id; cont.querySelectorAll('button').forEach(b => b.classList.remove('activa')); cont.querySelector('[data-p="' + p.id + '"]').classList.add('activa'); } }, 'data-p': p.id },
+    cont.append(h('button', { type: 'button', class: p.id === plantillaElegida ? 'activa' : '', on: { click: () => { plantillaElegida = p.id; if (p.resMin) $('nv-res').value = String(p.resMin); cont.querySelectorAll('button').forEach(b => b.classList.remove('activa')); cont.querySelector('[data-p="' + p.id + '"]').classList.add('activa'); } }, 'data-p': p.id },
       h('span', { class: 'ico' }, p.icono), h('b', null, p.nombre), h('span', null, p.desc)));
   }
   $('dlg-nuevo').showModal();

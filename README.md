@@ -26,10 +26,10 @@ Abre `index.html` servido por web (GitHub Pages o `npx serve .`); usa módulos y
 
 El escenario de ejemplo (el circuito de rally) **atraviesa un pueblo andaluz**: la pista entra por una salida, rodea la fuente de la plaza y sale por la opuesta (dentro del pueblo se corre sobre sus calles empedradas y no hay barreras). En el centro, junto a la plaza y con la fachada mirando a ella, está la **Iglesia de Nuestra Señora de la Granada de Moguer** a escala real (torre de 48 m), para mirar el pueblo con perspectiva. Además trae **dos riachuelos** (uno desemboca en el lago grande), **tres lagos** de distinto tamaño, **puentes** sobre la pista (el muelle de Riotinto y el romano) y un vado, hierba, bosques y barreras.
 
-1. **✨ Nuevo** → elige una plantilla: Lienzo vacío, Mundo RPG, Circuito de rally, Plataformas, Archipiélago, Cordillera, Desierto o Volcán. Tamaño de 256 m a 8 km y tres niveles de detalle del terreno.
+1. **✨ Nuevo** → elige una plantilla: Lienzo vacío, Mundo RPG, Circuito de rally, Plataformas, Archipiélago, Cordillera, Desierto, Volcán o una de **relieve llamativo** (Gran Cañón, Costa de acantilados, Desfiladeros, Valle de las mesas, Tepuis). Tamaño de 256 m a 8 km y tres niveles de detalle del terreno.
 2. **Herramientas** (barra izquierda, teclas `1`–`6`):
    - 👆 **Ver**: gira (arrastrar), desplaza (botón derecho) y acerca (rueda). Toca un elemento para seleccionarlo y moverlo, girarlo o escalarlo con las flechas (`G` `R` `S`). `F` enfoca, `Ctrl+D` duplica, `Supr` borra.
-   - ⛰ **Relieve**: subir, bajar, suavizar, aplanar, llevar a una altura fija o hacer rugoso, con radio y fuerza.
+   - ⛰ **Relieve**: subir, bajar, suavizar, aplanar, llevar a una altura fija o hacer rugoso, con radio y fuerza. Y para relieve llamativo: **⏫ Acantilado** (levanta una meseta con pared vertical en el borde; arrastrando se alarga), **🏞 Cañón** (excava un cauce de fondo plano con paredes en escalones; se elige la profundidad y las repisas) y **🪜 Terrazas** (convierte una ladera en escalones). La altura se mide desde donde empieza el trazo.
    - 🖌 **Pintar**: hierba, tierra, roca, arena, nieve, asfalto, barro, grava, musgo, ceniza, hielo, baldosa o «automático» (según altura, pendiente y bioma).
    - 🛣 **Caminos**: toca para poner puntos y sale una curva suave. Tierra, grava, asfalto (con líneas blancas), empedrado, arena, barro o nieve; ancho; circuito cerrado. «⛏ Ajustar terreno» allana el suelo bajo el camino con taludes suaves (ideal para pistas de rally). Arrastra un punto para moverlo, toca sobre el camino para insertar uno y botón derecho sobre un punto para quitarlo.
      Cada camino tiene además **superficie por tramos** (p. ej. un tramo de asfalto o un charco de barro dentro de una pista de grava; el color cambia con una transición suave y las líneas blancas salen solas en el asfalto) y **vallas y barreras**: cinta de balizar, valla de madera, guardarraíl, muro de neumáticos, muro de hormigón, balas de paja, conos y vallas publicitarias, en un lado o en los dos, a la distancia del borde que quieras. Se añaden en todo el camino o con «📍 Marcar en el camino»: un toque donde empieza y otro donde acaba (si el primer toque cae fuera del camino, a un lado, solo se pone en ese lado). Siguen el desnivel del terreno y se dibujan por instancias.
@@ -38,6 +38,22 @@ El escenario de ejemplo (el circuito de rally) **atraviesa un pueblo andaluz**: 
 3. **Panel derecho**: *Herramienta* (opciones de la herramienta), *Selección* (propiedades del elemento) y *Escenario* (hora, niebla, bioma, agua, generar terreno, tamaño, enlaces).
 4. **Guardado**: automático en el navegador. **📁 Escenarios** para abrir, duplicar o borrar; **💾 Exportar** / **📂 Importar** un `.escenario.json` (con los modelos importados dentro si quieres). `Ctrl+Z` / `Ctrl+Y` deshacen y rehacen.
 5. **▶ Visor** abre el escenario.
+
+### Relieve llamativo
+Acantilados, cañones y desfiladeros, generados (pestaña *Escenario* → *Generar terreno* → *Forma*) o con plantilla:
+
+| Forma / plantilla | Qué sale |
+|---|---|
+| **Cañones con repisas** · 🏜 Gran Cañón | Altiplano cortado por una red de cañones sinuosos de fondo plano y paredes en tres escalones, con agujas en el fondo. |
+| **Desfiladeros entre montañas** · ⛰ Desfiladeros | Crestas cortadas por gargantas estrechas y profundas, de paredes verticales. |
+| **Mesas y agujas de roca** · 🗿 Valle de las mesas | Llanura con mesas en terrazas (pared vertical y talud de derrubios al pie) y columnas de roca sueltas. |
+| **Costa de acantilados** · 🌊 Costa de acantilados | Tierra que cae en vertical al mar (nivel 0) y farallones en el agua junto a la costa. |
+| **Tepuis (mesetas gigantes)** · 🗻 Tepuis | Mesetas de cientos de metros con paredes verticales sobre la selva. |
+
+Las paredes se miden en metros (la distancia al borde sale del gradiente del ruido), así quedan verticales sea cual
+sea el tamaño de los accidentes; con detalle **alto** (513²), que estas plantillas proponen solas, una pared ocupa uno o
+dos puntos de la rejilla. En el 3D la textura de las paredes se proyecta de lado (no se estira) con franjas de estratos,
+y en el desierto, la selva y el volcán la roca toma el color del bioma. Pruebas en `test/relieve.test.js`.
 
 ### Circuitos de rally diseñados
 Cinco plantillas hechas a mano, como las haría un organizador (`js/rally-disenado.js`). Cada una es siempre igual
