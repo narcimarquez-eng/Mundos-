@@ -315,7 +315,7 @@
         agua: { activa: false, nivel: 0, color: null },
         bordes: 'cortado' // 'cortado' (se ve el borde) o 'infinito' (suelo que se extiende)
       },
-      ambiente: { hora: 13, niebla: 0.35, nubes: 0.4, cielo: 'auto' },
+      ambiente: { hora: 13, niebla: 0.35, nubes: 0.4, cielo: 'foto' },   // cielo: 'foto' (fotos 360°) o 'procedural'
       caminos: [],
       elementos: [],
       enlaces: { rpgBase: RPG_BASE },

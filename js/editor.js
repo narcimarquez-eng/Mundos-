@@ -916,7 +916,8 @@ function panelEscenario() {
 
   cuerpo.append(titulo('Ambiente'),
     deslizador('Hora del día', esc.ambiente.hora, 0, 24, 0.25, (v, fin) => { esc.ambiente.hora = v; escena.setHora(v); if (fin) programarGuardado(); }, v => { const hh = Math.floor(v), mm = Math.round((v - hh) * 60); return hh + ':' + String(mm).padStart(2, '0'); }),
-    deslizador('Nubes', esc.ambiente.nubes == null ? 0.4 : esc.ambiente.nubes, 0, 1, 0.01, (v, fin) => { esc.ambiente.nubes = v; escena.setNubes(v); if (fin) programarGuardado(); }, v => Math.round(v * 100) + '%'),
+    selector('Cielo', esc.ambiente.cielo === 'procedural' ? 'procedural' : 'foto', [['foto', 'Fotos 360° de nubes reales'], ['procedural', 'Calculado (nubes ajustables)']], v => { esc.ambiente.cielo = v; escena.setCielo(v); renderPanel(); programarGuardado(); }),
+        deslizador('Nubes', esc.ambiente.nubes == null ? 0.4 : esc.ambiente.nubes, 0, 1, 0.01, (v, fin) => { esc.ambiente.nubes = v; escena.setNubes(v); if (fin) programarGuardado(); }, v => Math.round(v * 100) + '%'),
     deslizador('Niebla', esc.ambiente.niebla, 0, 1, 0.01, (v, fin) => { esc.ambiente.niebla = v; escena.setNiebla(v); if (fin) programarGuardado(); }, v => Math.round(v * 100) + '%'),
     selector('Bioma (colores automáticos)', t.bioma, Object.entries(E.BIOMAS).map(([k, b]) => [k, b.nombre]), v => { puntoDeshacer(); t.bioma = v; escena.actualizarTerreno(null, true); escena.construirAgua(); escena.reconstruirElementos(); programarGuardado(); }),
     selector('Roca de las paredes y riscos', t.rocaPared || 'auto', E.ROCAS_PARED, v => { puntoDeshacer(); t.rocaPared = v; escena.actualizarTerreno(null, true); escena.reconstruirElementos(); programarGuardado(); }),

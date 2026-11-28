@@ -230,6 +230,7 @@ const fmtHora = v => { const h = Math.floor(v), m = Math.round((v - h) * 60) % 6
 $('btn-ajustes').addEventListener('click', () => { $('ajustes').hidden = !$('ajustes').hidden; });
 $('inp-hora').addEventListener('input', e => { esc.ambiente.hora = +e.target.value; escena.setHora(esc.ambiente.hora); $('val-hora').textContent = fmtHora(esc.ambiente.hora); });
 $('inp-nubes').addEventListener('input', e => { esc.ambiente.nubes = +e.target.value; escena.setNubes(esc.ambiente.nubes); $('val-nubes').textContent = Math.round(esc.ambiente.nubes * 100) + '%'; });
+$('sel-cielo').addEventListener('change', e => { esc.ambiente.cielo = e.target.value; escena.setCielo(esc.ambiente.cielo); });
 $('chk-ciclo').addEventListener('change', e => { prefs.ciclo = e.target.checked; guardarPrefs(); });
 $('inp-niebla').addEventListener('input', e => { esc.ambiente.niebla = +e.target.value; escena.setNiebla(esc.ambiente.niebla); $('val-niebla').textContent = Math.round(esc.ambiente.niebla * 100) + '%'; });
 $('chk-etiquetas').addEventListener('change', e => { prefs.etiquetas = e.target.checked; guardarPrefs(); escena.o.etiquetas = prefs.etiquetas; escena.reconstruirElementos(); });
@@ -248,6 +249,7 @@ $('sel-camino').addEventListener('change', () => { if (modo === 'recorrido') pre
 function rellenarAjustes() {
   $('inp-hora').value = esc.ambiente.hora; $('val-hora').textContent = fmtHora(esc.ambiente.hora);
   const nb = esc.ambiente.nubes == null ? 0.4 : esc.ambiente.nubes; $('inp-nubes').value = nb; $('val-nubes').textContent = Math.round(nb * 100) + '%';
+  $('sel-cielo').value = esc.ambiente.cielo === 'procedural' ? 'procedural' : 'foto';
   $('inp-niebla').value = esc.ambiente.niebla; $('val-niebla').textContent = Math.round(esc.ambiente.niebla * 100) + '%';
   $('chk-ciclo').checked = prefs.ciclo; $('chk-realistas').checked = prefs.realistas; $('chk-pradera').checked = prefs.pradera; $('chk-texsuelo').checked = prefs.texturasSuelo; $('chk-pueblos').checked = prefs.pueblosReales; $('chk-etiquetas').checked = prefs.etiquetas; $('chk-areas').checked = prefs.areas;
   $('sel-calidad').value = prefs.calidad; $('inp-fov').value = prefs.fov; $('val-fov').textContent = prefs.fov + '°';

@@ -13,6 +13,7 @@ import { Pradera } from './pradera.js';
 import { cargarGeneradorPueblos, construirPueblo, reservasDePueblo } from './pueblos3d.js';
 import { geoRocaForma, materialRoca, piedrasDe, tinteRoca, formaAzar } from './rocas.js';
 import { materialAgua, ponerHondura, EntornoAgua } from './agua.js';
+import { CieloFoto } from './cielo-foto.js';
 import { cargarSuelos, crearMezcla, actualizarMezcla, materialTerreno, materialCamino, escalaCamino, uvEnMetros } from './suelos.js';
 
 const E = window.Escenario;
@@ -835,6 +836,11 @@ export class Escena3D {
     const u = this.cielo.material.uniforms;
     u.turbidity.value = 2; u.rayleigh.value = 0.9; u.mieCoefficient.value = 0.004; u.mieDirectionalG.value = 0.8;
     this.scene.add(this.cielo);
+    // Cielo con fotos 360° de nubes reales (por defecto); 'procedural' deja el Sky de three.js con sus nubes
+    this.cieloFoto = new CieloFoto(this.o.rutaCielos);
+    this.cieloFoto.malla.visible = false;
+    this.scene.add(this.cieloFoto.malla);
+    this.modoCielo = 'foto';
     this.sol = new THREE.DirectionalLight('#fff4e0', 2.4);
     this.sol.castShadow = this.o.calidad !== 'baja';
     const sm = this.o.calidad === 'alta' ? 4096 : 2048;
@@ -871,9 +877,23 @@ export class Escena3D {
     const niebla = new THREE.Color(nieblaDia).lerp(new THREE.Color('#e6a77a'), ocaso).lerp(new THREE.Color('#0c1220'), 1 - dia);
     this.scene.fog.color.copy(niebla);
     this.scene.background = niebla.clone();
-    this.cielo.visible = dia > 0.02;
+    this._dia = dia; this._ocaso = ocaso;
+    this.cieloFoto.ajustar(dia, ocaso, sun, niebla);
+    this._mostrarCielo();
     this.renderer.toneMappingExposure = 0.3 + 0.25 * dia;
     this._colocarSol();
+  }
+  // modo: 'foto' (fotos 360°, también 'auto' y por defecto) o 'procedural' (Sky de three.js con nubes calculadas)
+  setCielo(modo) {
+    this.modoCielo = modo === 'procedural' ? 'procedural' : 'foto';
+    if (this.modoCielo === 'foto') this.cieloFoto.cargar(() => { this._entornoPendiente = true; if (this.entornoAgua) this.entornoAgua.ultima = null; });
+    this._mostrarCielo();
+    this._entornoPendiente = true;
+  }
+  _mostrarCielo() {
+    const foto = this.modoCielo === 'foto';
+    this.cieloFoto.malla.visible = foto;
+    this.cielo.visible = !foto && (this._dia == null ? 1 : this._dia) > 0.02;
   }
   setNubes(n) { // 0–1
     const u = this.cielo.material.uniforms;
@@ -920,6 +940,7 @@ export class Escena3D {
     this.setHora(esc.ambiente.hora);
     this.setNiebla(esc.ambiente.niebla);
     this.setNubes(esc.ambiente.nubes == null ? 0.4 : esc.ambiente.nubes);
+    this.setCielo(esc.ambiente.cielo);
     this.setFoco(0, 0, Math.min(esc.terreno.tam * 0.6, this.o.editor ? 700 : 220));
   }
 
@@ -1338,7 +1359,7 @@ export class Escena3D {
     // reflejo del cielo en el agua: se rehace al cambiar la hora (como mucho cada 1,5 s)
     if (this.matsAgua.length && this._entornoPendiente && this.reloj - (this._tEntorno || -9) > 1.5) {
       this._entornoPendiente = false; this._tEntorno = this.reloj;
-      const tex = this.entornoAgua.actualizar(this.cielo, this.scene.fog.color);
+      const tex = this.entornoAgua.actualizar(this.cielo, this.scene.fog.color, false, this.modoCielo === 'foto' ? this.cieloFoto : null);
       for (const m of this.matsAgua) { if (!m.envMap) m.needsUpdate = true; m.envMap = tex; }
     }
     if (this.cielo.material.uniforms.time) this.cielo.material.uniforms.time.value = this.reloj;

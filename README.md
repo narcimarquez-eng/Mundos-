@@ -55,6 +55,14 @@ sea el tamaño de los accidentes; con detalle **alto** (513²), que estas planti
 dos puntos de la rejilla. En el 3D la textura de las paredes se proyecta de lado (no se estira) con franjas de estratos,
 y en el desierto, la selva y el volcán la roca toma el color del bioma. Pruebas en `test/relieve.test.js`.
 
+### Cielo con fotos 360°
+Por defecto el cielo son **fotos panorámicas de nubes reales** (las mismas del Creador de Mundos RPG,
+`assets/cielos/dia|atardecer|noche.webp`), mezcladas según la hora y giradas para que el sol de la foto caiga donde
+está el sol de la escena; bajo el horizonte se funden con la niebla y el agua las refleja (`js/cielo-foto.js`). En
+*Escenario* → *Ambiente* → **Cielo** (y en los ajustes del visor) se puede volver al cielo **calculado**, el de
+three.js con nubes ajustables (el deslizador «Nubes» solo cuenta en ese). Se guarda en `ambiente.cielo`
+(`foto` o `procedural`).
+
 ### Riscos y tipos de roca
 - **Roca con foto real en el terreno**: seis suelos nuevos con las mismas fotos que las rocas 3D (`assets/rocas/`):
   **granito con líquenes, caliza gris, roca con musgo, roca en estratos, arenisca ocre y pizarra oscura**. Se pintan

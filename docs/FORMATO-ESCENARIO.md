@@ -13,7 +13,7 @@ Unidades en **metros**. Ejes como en three.js: `x` y `z` en el suelo, `y` hacia 
   "nextId": 31,                   // contador para ids nuevos
   "creado": "…", "actualizado": "…",
   "terreno": { … },
-  "ambiente": { "hora": 13, "niebla": 0.35, "nubes": 0.4, "cielo": "auto" },
+  "ambiente": { "hora": 13, "niebla": 0.35, "nubes": 0.4, "cielo": "foto" },   // cielo: "foto" (fotos 360°; "auto" igual) o "procedural"
   "caminos": [ /* Camino */ ],
   "elementos": [ /* Elemento */ ],
   "enlaces": { "rpgBase": "https://narcimarquez-eng.github.io/Creador-de-mundos-Rpg/" },
