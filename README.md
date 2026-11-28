@@ -9,7 +9,7 @@ Viene de la parte de edición del [Creador de Mundos RPG](https://github.com/nar
 | `index.html` + `js/editor.js` | **Editor de escenarios**. |
 | `visor.html` + `js/visor.js` | **Visor**: recorre el escenario con cámara libre, a pie o siguiendo un camino. |
 | `js/escenario-core.js` | Núcleo sin interfaz (terreno, pinceles, caminos, tipos de elemento, plantillas, guardado). Funciona en el navegador y en Node: el juego puede cargarlo para leer el escenario (`alturaEn`, `muestrearCamino`…). |
-| `js/rally-disenado.js` | Circuitos de rally **diseñados** (no aleatorios): trazado por vértices y radios con curvas de transición, relieve con formas, puentes y vados, barreras según la curva y el desnivel, bosques, pueblos… Registra cinco plantillas. Se carga después del núcleo. |
+| `js/rally-disenado.js` | Circuitos de rally **diseñados** (no aleatorios): trazado por vértices y radios con curvas de transición, relieve con formas, puentes y vados, barreras según la curva y el desnivel, bosques, pueblos… Registra seis plantillas. Se carga después del núcleo. |
 | `js/escena-3d.js` | Dibujo 3D con three.js, compartido por editor y visor. Un dibujo por tipo de elemento (`registrarDibujo`). |
 | `js/vegetacion.js` | Árboles con modelo `.glb`: instancias, niveles de detalle, impostores y viento. |
 | `js/pradera.js`, `js/pradera-atlas.js` | Hierba, trigo, flores, hierba alta y bambú alrededor de la cámara (el atlas viene del Creador RPG). |
@@ -63,6 +63,11 @@ está el sol de la escena; bajo el horizonte se funden con la niebla y el agua l
 three.js con nubes ajustables (el deslizador «Nubes» solo cuenta en ese). Se guarda en `ambiente.cielo`
 (`foto` o `procedural`).
 
+**Luz y sombras del cielo**: el cielo (de fotos o calculado) se convierte en luz ambiente para el terreno, las rocas
+y los árboles (las caras a la sombra de un cañón ya no salen negras; `luzCielo: false` en las opciones de Escena3D
+la quita), y por el terreno pasan **sombras de nubes** que se mueven con el viento (`ambiente.sombrasNubes`: 0–1,
+o `false` para quitarlas).
+
 ### Riscos y tipos de roca
 - **Roca con foto real en el terreno**: seis suelos nuevos con las mismas fotos que las rocas 3D (`assets/rocas/`):
   **granito con líquenes, caliza gris, roca con musgo, roca en estratos, arenisca ocre y pizarra oscura**. Se pintan
@@ -78,6 +83,12 @@ three.js con nubes ajustables (el deslizador «Nubes» solo cuenta en ese). Se g
 - **Cordillera** y **Desfiladeros** ya traen riscos en las laderas, áreas de riscos en las cumbres y mezcla de rocas.
 
 ### Circuitos de rally diseñados
+Formas de relieve llamativo para los diseños: `canon` (puede seguir la carretera: `ruta: [desde, hasta]`, con rampas
+para bajar y subir y paredes en escalones), `mesa` (pared vertical con talud de derrubios), `acantilado` (escalón;
+con `ruta` y `aparte` va paralelo a la carretera y el lado bajo es el contrario a ella) y `relieve.riscos`; además
+`riscos` (áreas de peñascos 3D) y `rocaPared`. La sexta plantilla, **🏞 Cañón de los Riscos**, los usa todos: bajada al
+fondo de un cañón de paredes en escalones, mesas y agujas, horquilla entre riscos y el borde de un acantilado de 40 m
+con guardarraíl.
 Cinco plantillas hechas a mano, como las haría un organizador (`js/rally-disenado.js`). Cada una es siempre igual
 (no dependen de la semilla):
 
